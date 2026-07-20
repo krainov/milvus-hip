@@ -1,5 +1,74 @@
 # AMD HIP Milvus port — where it lives and how to test (HIP vs CUDA)
 
+## Business value
+
+### Why this exists
+
+Milvus already has a **CPU / Lite** path that is enough for many deployments.
+The gap we close is different: teams that need **GPU ANN in Milvus on AMD
+hardware** today mostly face a **CUDA-only GPU stack** (or fall back to CPU).
+Marketing pages and “should work on Instinct” claims are not a runnable
+consumer-GPU path with measured results.
+
+This port delivers a **working HIP GPU line** (hipVS → Knowhere → Milvus) on
+**Radeon consumer GPU** (lab: RX 7900 XTX, `gfx1100`), with fair CPU vs GPU
+numbers, so the same stack can later scale to **Instinct** without rewriting
+the application.
+
+### Who it is for (narrow ICP)
+
+Not “all Milvus users.” Target users are teams for whom CPU/Lite is already
+a bottleneck or a strategic dead end:
+
+| Segment | Job to be done | Pain we remove |
+|---------|----------------|----------------|
+| Startups / SMB with RAG or semantic search | Faster search at target recall on their own box | No affordable AMD GPU path in Milvus; NVIDIA cloud/GPU is costly |
+| AMD workstation / small on-prem | Local PoC and production-like GPU ANN | “Docs say GPU” ≠ sealed `GPU_IVF_FLAT` actually works on their card |
+| Enterprise pilots before Instinct buy | Validate recall/QPS and ops on AMD first | Dual stack (CUDA PoC → AMD prod) or CPU-only PoC that does not predict GPU |
+
+**CPU/Lite remains the right default** when QPS/latency at the required recall
+is fine. GPU on consumer AMD is for when that is no longer true, or when the
+org standardizes on AMD GPUs.
+
+### What we proved (evidence, not slogans)
+
+On the same host (`amd-rx7900xtx`), SIFT-1M, IVF `nlist=1024`, `k=10`,
+same protocol on both sides (do not mix):
+
+| Protocol | Headline (high-recall `nprobe` 16–32) |
+|----------|----------------------------------------|
+| Batched harness (one `search()` with 10k queries) | GPU HIP ~**5–7×** CPU; recall@10 matches (~0.93–0.98) |
+| VectorDBBench concurrent | GPU HIP ~**2–4×** CPU; GPU holds ~11k QPS as `nprobe` rises |
+
+Plus engineering proof: sealed `GPU_CUVS_IVF_FLAT` build/load/search on
+`gfx1100`, including fixes that stock “it should work” paths did not give us
+out of the box (e.g. hipVS IVF packer on RDNA3).
+
+### Business value by stakeholder
+
+| Stakeholder | Value |
+|-------------|--------|
+| Product / DXC | Differentiator: runnable Milvus GPU on AMD with numbers, not only NVIDIA |
+| AMD-hardware customers | GPU vector search without CUDA lock-in; same software line toward Instinct |
+| AMD / ecosystem | Reference implementation + reproducible benchmarks on consumer RDNA3 |
+| Engineering portfolio | Layered port, patches, harness, and fair-compare methodology |
+
+### What this is *not*
+
+- Not a claim that every Milvus user needs a GPU (Lite/CPU stays valid).
+- Not “we will conquer AMD” by restating that Instinct support is desired.
+- Not a public GitHub dump without a clear why — the why is the gap above
+  and the measured HIP port.
+
+### Public release intent
+
+Publish when the story is: **problem → HIP solution on consumer AMD →
+measured speed-up / recall → how to reproduce → path to Instinct.**
+Feedback from GitHub then validates demand; it does not replace stating
+business value first.
+
+---
+
 ## Port location (DXC)
 
 The AMD/HIP Layer-3 changes are merged on the Milvus v2.5.4 line:
