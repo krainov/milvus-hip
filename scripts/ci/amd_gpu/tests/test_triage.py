@@ -1,0 +1,21 @@
+from __future__ import annotations
+
+import unittest
+
+from scripts.ci.amd_gpu.triage import classify, redact
+
+
+class TriageTest(unittest.TestCase):
+    def test_redacts_known_credentials(self) -> None:
+        text = "Authorization: Bearer abcdefghijklmnop password=secret-value"  # pragma: allowlist secret
+        redacted = redact(text)
+        self.assertNotIn("abcdefghijklmnop", redacted)
+        self.assertNotIn("secret-value", redacted)
+
+    def test_classifies_gpu_contention(self) -> None:
+        matches = classify("GPU has active compute processes")
+        self.assertEqual("gpu_busy", matches[0]["signature"])
+
+
+if __name__ == "__main__":
+    unittest.main()
