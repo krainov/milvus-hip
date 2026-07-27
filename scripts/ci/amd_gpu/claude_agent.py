@@ -51,7 +51,7 @@ def extract_json(text: str) -> Any:
 
 def call_claude(task: str, evidence: Any) -> dict[str, Any]:
     api_key = os.environ.get("ANTHROPIC_API_KEY")
-    model = os.environ.get("ANTHROPIC_MODEL", "claude-opus-4-8")
+    model = os.environ.get("ANTHROPIC_MODEL", "claude-opus-5")
     base_url = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com").rstrip("/")
     if not api_key:
         return {
