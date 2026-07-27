@@ -28,6 +28,16 @@ class TriageTest(unittest.TestCase):
         )
         self.assertEqual("milvus_node_mismatch", matches[0]["signature"])
 
+    def test_classifies_dependency_revision_mismatch(self) -> None:
+        matches = classify(
+            "dependency /opt/knowhere is deadbee, expected 0123456789abcdef"
+        )
+        self.assertEqual("dependency_revision_mismatch", matches[0]["signature"])
+
+    def test_classifies_missing_exact_sut(self) -> None:
+        matches = classify("Exact-SHA Milvus image is missing: milvus-ci:test")
+        self.assertEqual("exact_sut_missing", matches[0]["signature"])
+
 
 if __name__ == "__main__":
     unittest.main()

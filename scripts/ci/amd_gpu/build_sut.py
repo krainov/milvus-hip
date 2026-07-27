@@ -216,6 +216,19 @@ def inspect_image(reference: str) -> dict[str, Any]:
     }
 
 
+def prepare_nvidia_cache(cache_root: Path, os_name: str) -> dict[str, Any]:
+    directories = []
+    for suffix in ("ccache", "go-mod", "vscode-extensions", "conan"):
+        path = cache_root / f"{os_name}-{suffix}"
+        path.mkdir(parents=True, exist_ok=True)
+        path.chmod(0o777)
+        directories.append(str(path))
+    return {
+        "root": str(cache_root),
+        "directories": directories,
+    }
+
+
 def build_nvidia(root: Path, source_commit: str) -> dict[str, Any]:
     builder_image = required_env("NVIDIA_BUILDER_IMAGE")
     builder_digest = required_env("NVIDIA_BUILDER_DIGEST")
@@ -223,6 +236,7 @@ def build_nvidia(root: Path, source_commit: str) -> dict[str, Any]:
     runtime_image = required_env("MILVUS_CI_IMAGE")
     cache_root = Path(required_env("GPU_BUILD_CACHE_ROOT")).resolve()
     cache_root.mkdir(parents=True, exist_ok=True)
+    cache = prepare_nvidia_cache(cache_root, "ubuntu22.04")
 
     run_live(["docker", "pull", builder_image], cwd=root)
     builder = inspect_image(builder_image)
@@ -281,6 +295,7 @@ def build_nvidia(root: Path, source_commit: str) -> dict[str, Any]:
     )
     return {
         "builder": builder,
+        "cache": cache,
         "runtime_base_image": runtime_base,
         "runtime_image": inspect_image(runtime_image),
         "runtime_libraries": runtime_libraries,

@@ -56,6 +56,26 @@ SIGNATURES = [
         "milvus_node_mismatch",
         re.compile(r"node not match\[expectedNodeID=.*?\]\[actualNodeID=.*?\]", re.I),
     ),
+    (
+        "provenance",
+        "dependency_revision_mismatch",
+        re.compile(r"dependency [^\n]+ is [0-9a-f]{7,40}, expected [0-9a-f]{7,40}", re.I),
+    ),
+    (
+        "provenance",
+        "sut_revision_mismatch",
+        re.compile(r"(?:running Milvus commit|image revision)[^\n]+does not match", re.I),
+    ),
+    (
+        "build",
+        "exact_sut_missing",
+        re.compile(r"Exact-SHA Milvus (?:binary|image) is missing", re.I),
+    ),
+    (
+        "infrastructure",
+        "build_cache_permissions",
+        re.compile(r"(?:permission denied|can't write)[^\n]*(?:go/pkg/mod|\.conan)", re.I),
+    ),
     ("correctness", "gtest_failure", re.compile(r"\[\s*FAILED\s*\]|assertion.*failed", re.I)),
     ("correctness", "recall_gate", re.compile(r"recall.*(?:delta|tolerance|failed)", re.I)),
     (

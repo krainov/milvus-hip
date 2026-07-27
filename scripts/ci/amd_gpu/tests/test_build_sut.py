@@ -11,6 +11,7 @@ from unittest import mock
 from scripts.ci.amd_gpu.build_sut import (
     BuildError,
     package_libraries,
+    prepare_nvidia_cache,
     verify_artifact,
     verify_checkout,
     verify_dependency_source,
@@ -80,6 +81,24 @@ class BuildInputTest(unittest.TestCase):
                 b"library",
                 (root / "lib/libmilvus_core.so").read_bytes(),
             )
+
+    def test_nvidia_cache_matches_compose_volume_names(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+
+            result = prepare_nvidia_cache(root, "ubuntu22.04")
+
+            self.assertEqual(
+                {
+                    "ubuntu22.04-ccache",
+                    "ubuntu22.04-conan",
+                    "ubuntu22.04-go-mod",
+                    "ubuntu22.04-vscode-extensions",
+                },
+                {Path(path).name for path in result["directories"]},
+            )
+            for path in result["directories"]:
+                self.assertEqual(0o777, Path(path).stat().st_mode & 0o777)
 
 
 if __name__ == "__main__":
