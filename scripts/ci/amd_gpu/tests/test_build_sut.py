@@ -134,6 +134,10 @@ class BuildInputTest(unittest.TestCase):
             "/cache/conan:/home/milvus/.conan",
             run_live.call_args_list[1].args[0],
         )
+        self.assertIn(
+            "CONAN_USER_HOME=/home/milvus",
+            run_live.call_args_list[1].args[0],
+        )
 
     def test_go_toolchain_uses_runner_identity_and_writable_caches(self) -> None:
         with (

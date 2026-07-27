@@ -350,6 +350,8 @@ def cleanup_stale_nvidia_builders(
             "docker",
             "run",
             "--rm",
+            "--env",
+            "CONAN_USER_HOME=/home/milvus",
             "--volume",
             f"{conan_cache}:/home/milvus/.conan",
             builder_image,
