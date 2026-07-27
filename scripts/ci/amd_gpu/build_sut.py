@@ -50,6 +50,32 @@ def verify_checkout(root: Path) -> tuple[str, str]:
     return source_commit, requested_commit
 
 
+def verify_ci_workspace(root: Path) -> dict[str, Any]:
+    if os.environ.get("GITHUB_ACTIONS") != "true":
+        return {"enforced": False, "source_root": str(root)}
+
+    github_workspace = Path(required_env("GITHUB_WORKSPACE")).resolve()
+    runner_workspace = Path(required_env("RUNNER_WORKSPACE")).resolve()
+    if root != github_workspace:
+        raise BuildError(
+            f"source root {root} is not GitHub workspace {github_workspace}"
+        )
+    try:
+        root.relative_to(runner_workspace)
+    except ValueError as error:
+        raise BuildError(
+            f"GitHub workspace {root} is outside runner workspace {runner_workspace}"
+        ) from error
+    if root == runner_workspace:
+        raise BuildError("source root cannot be the runner workspace root")
+    return {
+        "enforced": True,
+        "source_root": str(root),
+        "github_workspace": str(github_workspace),
+        "runner_workspace": str(runner_workspace),
+    }
+
+
 def verify_dependency_source(path: Path, expected_commit: str) -> dict[str, Any]:
     actual_commit = git_value(path, "rev-parse", "HEAD")
     tracked_changes = git_value(
@@ -522,6 +548,7 @@ def main() -> int:
         "status": "fail",
     }
     try:
+        payload["workspace_safety"] = verify_ci_workspace(root)
         source_commit, requested_commit = verify_checkout(root)
         payload.update(
             {

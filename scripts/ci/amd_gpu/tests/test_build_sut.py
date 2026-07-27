@@ -18,6 +18,7 @@ from scripts.ci.amd_gpu.build_sut import (
     secure_cached_conan_sources,
     verify_artifact,
     verify_checkout,
+    verify_ci_workspace,
     verify_dependency_source,
 )
 
@@ -53,6 +54,32 @@ class BuildInputTest(unittest.TestCase):
             with mock.patch.dict(os.environ, {"GITHUB_SHA": commit}):
                 with self.assertRaisesRegex(BuildError, "tracked changes"):
                     verify_checkout(root)
+
+    def test_ci_cleanup_is_confined_to_runner_workspace(self) -> None:
+        root = Path("/runner/_work/milvus/milvus")
+        with mock.patch.dict(
+            os.environ,
+            {
+                "GITHUB_ACTIONS": "true",
+                "GITHUB_WORKSPACE": str(root),
+                "RUNNER_WORKSPACE": "/runner/_work/milvus",
+            },
+        ):
+            result = verify_ci_workspace(root)
+
+        self.assertTrue(result["enforced"])
+
+    def test_ci_rejects_source_outside_runner_workspace(self) -> None:
+        with mock.patch.dict(
+            os.environ,
+            {
+                "GITHUB_ACTIONS": "true",
+                "GITHUB_WORKSPACE": "/home/developer/milvus",
+                "RUNNER_WORKSPACE": "/runner/_work/milvus",
+            },
+        ):
+            with self.assertRaisesRegex(BuildError, "outside runner workspace"):
+                verify_ci_workspace(Path("/home/developer/milvus"))
 
     def test_dependency_requires_pinned_clean_commit(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
