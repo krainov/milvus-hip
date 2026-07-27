@@ -10,6 +10,7 @@ from unittest import mock
 
 from scripts.ci.amd_gpu.build_sut import (
     BuildError,
+    cleanup_stale_nvidia_builders,
     package_libraries,
     prepare_nvidia_cache,
     verify_artifact,
@@ -99,6 +100,37 @@ class BuildInputTest(unittest.TestCase):
             )
             for path in result["directories"]:
                 self.assertEqual(0o777, Path(path).stat().st_mode & 0o777)
+
+    def test_stale_nvidia_builders_and_locks_are_removed(self) -> None:
+        with (
+            mock.patch(
+                "scripts.ci.amd_gpu.build_sut.run_command",
+                return_value={
+                    "returncode": 0,
+                    "stdout": "container-one\ncontainer-two",
+                    "stderr": "",
+                },
+            ),
+            mock.patch("scripts.ci.amd_gpu.build_sut.run_live") as run_live,
+        ):
+            result = cleanup_stale_nvidia_builders(
+                Path("/source"),
+                "builder:tag",
+                Path("/cache/conan"),
+            )
+
+        self.assertEqual(
+            ["container-one", "container-two"],
+            result["removed_builder_containers"],
+        )
+        self.assertEqual(
+            ["docker", "rm", "--force", "container-one", "container-two"],
+            run_live.call_args_list[0].args[0],
+        )
+        self.assertIn(
+            "/cache/conan:/home/milvus/.conan",
+            run_live.call_args_list[1].args[0],
+        )
 
 
 if __name__ == "__main__":

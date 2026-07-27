@@ -93,6 +93,28 @@ def run_live(
     subprocess.run(argv, cwd=cwd, env=env, check=True)
 
 
+def run_live_with_retry(
+    argv: list[str],
+    *,
+    cwd: Path,
+    env: dict[str, str] | None = None,
+    attempts: int = 3,
+    delay_s: float = 15,
+) -> None:
+    for attempt in range(1, attempts + 1):
+        try:
+            run_live(argv, cwd=cwd, env=env)
+            return
+        except subprocess.CalledProcessError:
+            if attempt == attempts:
+                raise
+            print(
+                f"build command failed on attempt {attempt}/{attempts}; retrying",
+                flush=True,
+            )
+            time.sleep(delay_s)
+
+
 def clean_outputs(root: Path) -> None:
     for relative in ("cmake_build", "internal/core/output", "bin", "lib"):
         path = root / relative
@@ -229,6 +251,49 @@ def prepare_nvidia_cache(cache_root: Path, os_name: str) -> dict[str, Any]:
     }
 
 
+def cleanup_stale_nvidia_builders(
+    root: Path,
+    builder_image: str,
+    conan_cache: Path,
+) -> dict[str, Any]:
+    result = run_command(
+        [
+            "docker",
+            "ps",
+            "--all",
+            "--quiet",
+            "--filter",
+            "label=com.docker.compose.project=milvus",
+            "--filter",
+            "label=com.docker.compose.service=gpubuilder",
+        ]
+    )
+    if result["returncode"] != 0:
+        raise BuildError(result["stderr"] or "cannot list stale NVIDIA builders")
+    containers = result["stdout"].splitlines()
+    if containers:
+        run_live(["docker", "rm", "--force", *containers], cwd=root)
+
+    run_live(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--volume",
+            f"{conan_cache}:/home/milvus/.conan",
+            builder_image,
+            "conan",
+            "remove",
+            "--locks",
+        ],
+        cwd=root,
+    )
+    return {
+        "removed_builder_containers": containers,
+        "conan_locks_cleared": True,
+    }
+
+
 def build_nvidia(root: Path, source_commit: str) -> dict[str, Any]:
     builder_image = required_env("NVIDIA_BUILDER_IMAGE")
     builder_digest = required_env("NVIDIA_BUILDER_DIGEST")
@@ -245,6 +310,11 @@ def build_nvidia(root: Path, source_commit: str) -> dict[str, Any]:
             f"builder image digest does not contain pinned {builder_digest}: "
             f"{builder['repo_digests']}"
         )
+    stale_state = cleanup_stale_nvidia_builders(
+        root,
+        builder_image,
+        cache_root / "ubuntu22.04-conan",
+    )
 
     build_env = os.environ.copy()
     build_env.update(
@@ -258,7 +328,7 @@ def build_nvidia(root: Path, source_commit: str) -> dict[str, Any]:
             "ENABLE_AZURE": "false",
         }
     )
-    run_live(
+    run_live_with_retry(
         ["bash", "build/builder_gpu.sh", "make", "milvus-gpu"],
         cwd=root,
         env=build_env,
@@ -296,6 +366,7 @@ def build_nvidia(root: Path, source_commit: str) -> dict[str, Any]:
     return {
         "builder": builder,
         "cache": cache,
+        "stale_state": stale_state,
         "runtime_base_image": runtime_base,
         "runtime_image": inspect_image(runtime_image),
         "runtime_libraries": runtime_libraries,
