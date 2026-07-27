@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 try:
     from .common import host_metadata, run_command, sha256, utc_now, write_json
@@ -100,6 +100,7 @@ def run_live_with_retry(
     env: dict[str, str] | None = None,
     attempts: int = 3,
     delay_s: float = 15,
+    before_retry: Callable[[], None] | None = None,
 ) -> None:
     for attempt in range(1, attempts + 1):
         try:
@@ -112,6 +113,8 @@ def run_live_with_retry(
                 f"build command failed on attempt {attempt}/{attempts}; retrying",
                 flush=True,
             )
+            if before_retry is not None:
+                before_retry()
             time.sleep(delay_s)
 
 
@@ -296,6 +299,29 @@ def prepare_nvidia_go_toolchain(
     }
 
 
+def nvidia_compose_build_command(
+    sumdb_cache: Path,
+    version: str = "go1.22.0",
+) -> list[str]:
+    user = f"{os.getuid()}:{os.getgid()}"
+    return [
+        "docker",
+        "compose",
+        "run",
+        "--no-deps",
+        "--rm",
+        "--user",
+        user,
+        "--volume",
+        f"{sumdb_cache}:/go/pkg/sumdb",
+        "--env",
+        f"GOTOOLCHAIN={version}",
+        "gpubuilder",
+        "make",
+        "milvus-gpu",
+    ]
+
+
 def cleanup_stale_nvidia_builders(
     root: Path,
     builder_image: str,
@@ -379,10 +405,18 @@ def build_nvidia(root: Path, source_commit: str) -> dict[str, Any]:
             "ENABLE_AZURE": "false",
         }
     )
+    def cleanup_before_retry() -> None:
+        cleanup_stale_nvidia_builders(
+            root,
+            builder_image,
+            cache_root / "ubuntu22.04-conan",
+        )
+
     run_live_with_retry(
-        ["bash", "build/builder_gpu.sh", "make", "milvus-gpu"],
+        nvidia_compose_build_command(cache_root / "ubuntu22.04-go-sumdb"),
         cwd=root,
         env=build_env,
+        before_retry=cleanup_before_retry,
     )
     runtime_libraries = package_libraries(root)
     builder_after_build = inspect_image(builder_image)

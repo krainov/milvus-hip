@@ -11,6 +11,7 @@ from unittest import mock
 from scripts.ci.amd_gpu.build_sut import (
     BuildError,
     cleanup_stale_nvidia_builders,
+    nvidia_compose_build_command,
     package_libraries,
     prepare_nvidia_cache,
     prepare_nvidia_go_toolchain,
@@ -152,6 +153,18 @@ class BuildInputTest(unittest.TestCase):
         self.assertIn("/cache/mod:/go/pkg/mod", command)
         self.assertIn("/cache/sumdb:/go/pkg/sumdb", command)
         self.assertEqual("go1.22.0", result["version"])
+
+    def test_nvidia_build_reuses_preseeded_sumdb(self) -> None:
+        with (
+            mock.patch("scripts.ci.amd_gpu.build_sut.os.getuid", return_value=1001),
+            mock.patch("scripts.ci.amd_gpu.build_sut.os.getgid", return_value=1002),
+        ):
+            command = nvidia_compose_build_command(Path("/cache/sumdb"))
+
+        self.assertIn("1001:1002", command)
+        self.assertIn("/cache/sumdb:/go/pkg/sumdb", command)
+        self.assertIn("GOTOOLCHAIN=go1.22.0", command)
+        self.assertEqual(["gpubuilder", "make", "milvus-gpu"], command[-3:])
 
 
 if __name__ == "__main__":
