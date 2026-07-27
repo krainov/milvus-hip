@@ -341,6 +341,8 @@ def nvidia_compose_build_command(
         "--volume",
         f"{sumdb_cache}:/go/pkg/sumdb",
         "--env",
+        "HOME=/tmp",
+        "--env",
         f"GOTOOLCHAIN={version}",
         "gpubuilder",
         "make",
