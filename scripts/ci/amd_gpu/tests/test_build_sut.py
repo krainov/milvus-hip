@@ -15,6 +15,7 @@ from scripts.ci.amd_gpu.build_sut import (
     package_libraries,
     prepare_nvidia_cache,
     prepare_nvidia_go_toolchain,
+    secure_cached_conan_sources,
     verify_artifact,
     verify_checkout,
     verify_dependency_source,
@@ -169,6 +170,27 @@ class BuildInputTest(unittest.TestCase):
         self.assertIn("/cache/sumdb:/go/pkg/sumdb", command)
         self.assertIn("GOTOOLCHAIN=go1.22.0", command)
         self.assertEqual(["gpubuilder", "make", "milvus-gpu"], command[-3:])
+
+    def test_insecure_cached_conan_source_is_rewritten(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            recipe = root / "data/lzo/2.10/_/_/export/conandata.yml"
+            recipe.parent.mkdir(parents=True)
+            recipe.write_text(
+                "url: http://www.oberhumer.com/opensource/lzo/download/"
+                "lzo-2.10.tar.gz\n"
+            )
+
+            result = secure_cached_conan_sources(root)
+
+            self.assertEqual("updated-to-https", result[0]["status"])
+            self.assertIn("https://www.oberhumer.com", recipe.read_text())
+
+    def test_missing_conan_recipe_is_deferred_until_retry(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            result = secure_cached_conan_sources(Path(temporary))
+
+        self.assertEqual("recipe-not-cached", result[0]["status"])
 
 
 if __name__ == "__main__":

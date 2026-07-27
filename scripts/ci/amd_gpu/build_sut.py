@@ -367,6 +367,35 @@ def cleanup_stale_nvidia_builders(
     }
 
 
+def secure_cached_conan_sources(conan_cache: Path) -> list[dict[str, Any]]:
+    overrides = (
+        (
+            Path("data/lzo/2.10/_/_/export/conandata.yml"),
+            "http://www.oberhumer.com/opensource/lzo/download/lzo-2.10.tar.gz",
+            "https://www.oberhumer.com/opensource/lzo/download/lzo-2.10.tar.gz",
+        ),
+    )
+    results: list[dict[str, Any]] = []
+    for relative, insecure_url, secure_url in overrides:
+        path = conan_cache / relative
+        if not path.is_file():
+            results.append({"path": str(path), "status": "recipe-not-cached"})
+            continue
+
+        content = path.read_text()
+        if insecure_url in content:
+            if content.count(insecure_url) != 1:
+                raise BuildError(f"unexpected duplicate Conan source URL in {path}")
+            path.write_text(content.replace(insecure_url, secure_url))
+            status = "updated-to-https"
+        elif secure_url in content:
+            status = "already-https"
+        else:
+            raise BuildError(f"expected pinned Conan source URL is missing from {path}")
+        results.append({"path": str(path), "status": status})
+    return results
+
+
 def build_nvidia(root: Path, source_commit: str) -> dict[str, Any]:
     builder_image = required_env("NVIDIA_BUILDER_IMAGE")
     builder_digest = required_env("NVIDIA_BUILDER_DIGEST")
@@ -387,6 +416,9 @@ def build_nvidia(root: Path, source_commit: str) -> dict[str, Any]:
         root,
         builder_image,
         cache_root / "ubuntu22.04-conan",
+    )
+    stale_state["conan_source_overrides"] = secure_cached_conan_sources(
+        cache_root / "ubuntu22.04-conan"
     )
     go_toolchain = prepare_nvidia_go_toolchain(
         root,
@@ -413,6 +445,7 @@ def build_nvidia(root: Path, source_commit: str) -> dict[str, Any]:
             builder_image,
             cache_root / "ubuntu22.04-conan",
         )
+        secure_cached_conan_sources(cache_root / "ubuntu22.04-conan")
 
     run_live_with_retry(
         nvidia_compose_build_command(cache_root / "ubuntu22.04-go-sumdb"),
