@@ -43,7 +43,7 @@ jobs:
 
       - name: Scan changed files for credentials
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || github.sha }}
         run: |
           if [ -n "${BASE_SHA}" ] && git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
             python3 scripts/ci/amd_gpu/secret_scan.py --base "${BASE_SHA}"
