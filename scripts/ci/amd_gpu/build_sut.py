@@ -343,6 +343,8 @@ def nvidia_compose_build_command(
         "--env",
         "HOME=/tmp",
         "--env",
+        "ENABLE_AZURE=false",
+        "--env",
         f"GOTOOLCHAIN={version}",
         "gpubuilder",
         "make",

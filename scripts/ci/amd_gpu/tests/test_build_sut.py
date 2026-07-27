@@ -196,6 +196,7 @@ class BuildInputTest(unittest.TestCase):
         self.assertIn("1001:1002", command)
         self.assertIn("/cache/sumdb:/go/pkg/sumdb", command)
         self.assertIn("HOME=/tmp", command)
+        self.assertIn("ENABLE_AZURE=false", command)
         self.assertIn("GOTOOLCHAIN=go1.22.0", command)
         self.assertEqual(["gpubuilder", "make", "milvus-gpu"], command[-3:])
 
