@@ -66,9 +66,9 @@ jobs:
       GPU_LIBCUVS_SHA256: da850f87c32276d322612febf928553d2fb04d2b57d5400739c9da9f7506d5fc
       MILVUS_CI_ROOT: ${{ github.workspace }}
       MILVUS_CI_BINARY: ${{ github.workspace }}/bin/milvus
-      MILVUS_CI_PID_FILE: ${{ runner.temp }}/milvus-${{ github.run_id }}-${{ github.run_attempt }}-amd.pid
+      MILVUS_CI_PID_FILE: /tmp/milvus-${{ github.run_id }}-${{ github.run_attempt }}-amd.pid
       MILVUS_CI_LOG_FILE: ${{ github.workspace }}/gpu-evidence/milvus-amd-server.log
-      MILVUS_CI_RUNTIME_DIR: ${{ runner.temp }}/milvus-${{ github.run_id }}-${{ github.run_attempt }}-amd
+      MILVUS_CI_RUNTIME_DIR: /tmp/milvus-${{ github.run_id }}-${{ github.run_attempt }}-amd
       MILVUS_CI_ETCD_ROOT_PATH: ci-${{ github.run_id }}-${{ github.run_attempt }}-amd
       MILVUS_CI_MINIO_ROOT_PATH: ci-${{ github.run_id }}-${{ github.run_attempt }}-amd
       MILVUS_CI_EXTRA_LD_LIBRARY_PATH: /home/amd/rocmds_check_gfx1100/install/lib:/opt/rocm/lib
@@ -218,7 +218,7 @@ jobs:
       MILVUS_CI_IMAGE: milvus-ci-nvidia:${{ github.sha }}
       MILVUS_CI_CONTAINER: milvus-ci-${{ github.run_id }}-${{ github.run_attempt }}-nvidia
       MILVUS_CI_DOCKER_NETWORK: milvus
-      MILVUS_CI_RUNTIME_DIR: ${{ runner.temp }}/milvus-${{ github.run_id }}-${{ github.run_attempt }}-nvidia
+      MILVUS_CI_RUNTIME_DIR: /tmp/milvus-${{ github.run_id }}-${{ github.run_attempt }}-nvidia
       MILVUS_CI_LOG_FILE: ${{ github.workspace }}/gpu-evidence/milvus-nvidia-server.log
       MILVUS_CI_ETCD_ENDPOINTS: etcd:2379
       MILVUS_CI_ETCD_ROOT_PATH: ci-${{ github.run_id }}-${{ github.run_attempt }}-nvidia
