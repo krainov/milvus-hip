@@ -232,7 +232,6 @@ def build_amd(root: Path) -> dict[str, Any]:
             ),
             "CMAKE_EXTRA_ARGS": (
                 f"-DMILVUS_KNOWHERE_SOURCE_DIR={knowhere_source} "
-                "-DMILVUS_GPU_BACKEND=HIP "
                 f"-DxxHash_DIR={xxhash_dir}"
             ),
         }
