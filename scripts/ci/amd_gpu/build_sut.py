@@ -240,7 +240,13 @@ def inspect_image(reference: str) -> dict[str, Any]:
 
 def prepare_nvidia_cache(cache_root: Path, os_name: str) -> dict[str, Any]:
     directories = []
-    for suffix in ("ccache", "go-mod", "vscode-extensions", "conan"):
+    for suffix in (
+        "ccache",
+        "go-mod",
+        "go-sumdb",
+        "vscode-extensions",
+        "conan",
+    ):
         path = cache_root / f"{os_name}-{suffix}"
         path.mkdir(parents=True, exist_ok=True)
         path.chmod(0o777)
@@ -248,6 +254,45 @@ def prepare_nvidia_cache(cache_root: Path, os_name: str) -> dict[str, Any]:
     return {
         "root": str(cache_root),
         "directories": directories,
+    }
+
+
+def prepare_nvidia_go_toolchain(
+    root: Path,
+    builder_image: str,
+    module_cache: Path,
+    sumdb_cache: Path,
+    version: str = "go1.22.0",
+) -> dict[str, Any]:
+    user = f"{os.getuid()}:{os.getgid()}"
+    run_live(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--user",
+            user,
+            "--env",
+            "HOME=/tmp",
+            "--env",
+            "GOPATH=/go",
+            "--env",
+            f"GOTOOLCHAIN={version}",
+            "--volume",
+            f"{module_cache}:/go/pkg/mod",
+            "--volume",
+            f"{sumdb_cache}:/go/pkg/sumdb",
+            builder_image,
+            "go",
+            "version",
+        ],
+        cwd=root,
+    )
+    return {
+        "version": version,
+        "user": user,
+        "module_cache": str(module_cache),
+        "sumdb_cache": str(sumdb_cache),
     }
 
 
@@ -315,6 +360,12 @@ def build_nvidia(root: Path, source_commit: str) -> dict[str, Any]:
         builder_image,
         cache_root / "ubuntu22.04-conan",
     )
+    go_toolchain = prepare_nvidia_go_toolchain(
+        root,
+        builder_image,
+        cache_root / "ubuntu22.04-go-mod",
+        cache_root / "ubuntu22.04-go-sumdb",
+    )
 
     build_env = os.environ.copy()
     build_env.update(
@@ -366,6 +417,7 @@ def build_nvidia(root: Path, source_commit: str) -> dict[str, Any]:
     return {
         "builder": builder,
         "cache": cache,
+        "go_toolchain": go_toolchain,
         "stale_state": stale_state,
         "runtime_base_image": runtime_base,
         "runtime_image": inspect_image(runtime_image),

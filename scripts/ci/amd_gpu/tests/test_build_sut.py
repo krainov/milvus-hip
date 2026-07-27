@@ -13,6 +13,7 @@ from scripts.ci.amd_gpu.build_sut import (
     cleanup_stale_nvidia_builders,
     package_libraries,
     prepare_nvidia_cache,
+    prepare_nvidia_go_toolchain,
     verify_artifact,
     verify_checkout,
     verify_dependency_source,
@@ -94,6 +95,7 @@ class BuildInputTest(unittest.TestCase):
                     "ubuntu22.04-ccache",
                     "ubuntu22.04-conan",
                     "ubuntu22.04-go-mod",
+                    "ubuntu22.04-go-sumdb",
                     "ubuntu22.04-vscode-extensions",
                 },
                 {Path(path).name for path in result["directories"]},
@@ -131,6 +133,25 @@ class BuildInputTest(unittest.TestCase):
             "/cache/conan:/home/milvus/.conan",
             run_live.call_args_list[1].args[0],
         )
+
+    def test_go_toolchain_uses_runner_identity_and_writable_caches(self) -> None:
+        with (
+            mock.patch("scripts.ci.amd_gpu.build_sut.os.getuid", return_value=1001),
+            mock.patch("scripts.ci.amd_gpu.build_sut.os.getgid", return_value=1002),
+            mock.patch("scripts.ci.amd_gpu.build_sut.run_live") as run_live,
+        ):
+            result = prepare_nvidia_go_toolchain(
+                Path("/source"),
+                "builder:tag",
+                Path("/cache/mod"),
+                Path("/cache/sumdb"),
+            )
+
+        command = run_live.call_args.args[0]
+        self.assertIn("1001:1002", command)
+        self.assertIn("/cache/mod:/go/pkg/mod", command)
+        self.assertIn("/cache/sumdb:/go/pkg/sumdb", command)
+        self.assertEqual("go1.22.0", result["version"])
 
 
 if __name__ == "__main__":
