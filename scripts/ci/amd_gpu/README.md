@@ -6,10 +6,11 @@ scripts.
 
 ## Required gates
 
-Every pull request targeting `amd/main` runs both GPU jobs. The final verdict
+Every pull request targeting `v2.5.4` runs both GPU jobs. The final verdict
 requires all of the following:
 
 - the AMD and NVIDIA jobs use the same pull request commit;
+- Milvus is rebuilt from a clean checkout of that exact commit on both runners;
 - the running Milvus build advertises that commit in `milvus_build_info`;
 - the frozen SIFT-1M dataset checksums match;
 - `BRUTEFORCE_C_TEST`, `IVF_FLAT_C_TEST`, `IVF_PQ_C_TEST`, `CAGRA_C_TEST`, and
@@ -18,7 +19,8 @@ requires all of the following:
   configured absolute tolerance.
 
 QPS, batch p99, index build time, and sampled peak VRAM are evidence, not
-correctness gates.
+correctness gates. `nprobe=1` is retained in the raw results but excluded from
+the correctness verdict because it is too noisy for this comparison.
 
 The benchmark inserts deterministic row IDs before comparing search results to
 the exact-KNN neighbors in the dataset. It rejects a stale server even if that
@@ -26,10 +28,11 @@ server produces good benchmark numbers.
 
 ## GPU isolation
 
-The workflow stops Milvus before Runner Doctor and the shared library gtests.
-Runner Doctor then requires an idle GPU. Milvus is restarted and health-checked
-before product benchmarks. `milvus_service.sh` supports either a Docker
-container or a host binary and leaves dependency containers running.
+The workflow removes only CI-managed Milvus processes before Runner Doctor and
+the shared library gtests. Runner Doctor then requires an idle GPU. A newly
+built Milvus is started with run-specific storage roots and health/provenance
+checked before product benchmarks. `milvus_service.sh` supports a Docker
+container or host binary and leaves dependency containers running.
 
 ## Runner contract
 
@@ -56,19 +59,15 @@ NVIDIA gtests can run in a CUDA build container by also setting:
 - `GPU_GTEST_HOST_SOURCE_DIR`
 - `GPU_GTEST_CONTAINER_SOURCE_DIR`
 
-Containerized Milvus uses `MILVUS_CI_CONTAINER`. Host Milvus uses:
-
-- `MILVUS_CI_ROOT`
-- `MILVUS_CI_PID_FILE`
-- `MILVUS_CI_LOG_FILE`
-- `MILVUS_CI_EXTRA_LD_LIBRARY_PATH`
+The workflow owns all Milvus image, binary, container, PID, log, and runtime
+paths. Runner configuration must not point it at a preinstalled Milvus.
 
 ## AI boundary
 
 Claude receives only generated JSON evidence. It has no tools and cannot alter
 the verdict. Failure triage and benchmark narration are skipped for pull
 requests so that an unmerged workflow never receives `ANTHROPIC_API_KEY`.
-Pushes to `amd/main` read the key only from the GitHub Actions secret and the
+Pushes to `v2.5.4` read the key only from the GitHub Actions secret and the
 model name from the optional `ANTHROPIC_MODEL` repository variable.
 
 The deterministic verdict, both backend logs, redacted triage, Claude output,

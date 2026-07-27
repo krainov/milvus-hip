@@ -16,6 +16,15 @@ class TriageTest(unittest.TestCase):
         matches = classify("GPU has active compute processes")
         self.assertEqual("gpu_busy", matches[0]["signature"])
 
+    def test_green_doctor_tool_names_are_not_failures(self) -> None:
+        self.assertEqual([], classify("[PASS] hipcc\n[PASS] nvcc\nQPS: 1000"))
+
+    def test_classifies_node_identity_failure(self) -> None:
+        matches = classify(
+            "rpc error: node not match[expectedNodeID=17][actualNodeID=18]"
+        )
+        self.assertEqual("milvus_node_mismatch", matches[0]["signature"])
+
 
 if __name__ == "__main__":
     unittest.main()

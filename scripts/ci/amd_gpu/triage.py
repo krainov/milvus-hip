@@ -25,11 +25,36 @@ SIGNATURES = [
     ("infrastructure", "disk_full", re.compile(r"no space left on device", re.I)),
     ("infrastructure", "docker_failure", re.compile(r"docker.*(?:daemon|pull|timeout|failed)", re.I)),
     ("infrastructure", "gpu_busy", re.compile(r"active compute processes|device.*busy", re.I)),
-    ("compiler", "hip_compile", re.compile(r"hipcc|clang.*error|offload-arch", re.I)),
-    ("compiler", "cuda_compile", re.compile(r"nvcc|cuda.*error|unsupported gpu architecture", re.I)),
+    (
+        "compiler",
+        "hip_compile",
+        re.compile(
+            r"(?:hipcc|clang|offload-arch)[^\n]{0,200}"
+            r"(?:error:|failed|unsupported|not found)",
+            re.I,
+        ),
+    ),
+    (
+        "compiler",
+        "cuda_compile",
+        re.compile(
+            r"(?:nvcc|cuda|gpu architecture)[^\n]{0,200}"
+            r"(?:error:|failed|unsupported|not found)",
+            re.I,
+        ),
+    ),
+    (
+        "infrastructure",
+        "milvus_node_mismatch",
+        re.compile(r"node not match\[expectedNodeID=.*?\]\[actualNodeID=.*?\]", re.I),
+    ),
     ("correctness", "gtest_failure", re.compile(r"\[\s*FAILED\s*\]|assertion.*failed", re.I)),
     ("correctness", "recall_gate", re.compile(r"recall.*(?:delta|tolerance|failed)", re.I)),
-    ("benchmark", "benchmark_failure", re.compile(r"benchmark|qps|p99", re.I)),
+    (
+        "benchmark",
+        "benchmark_failure",
+        re.compile(r"benchmark[^\n]{0,160}(?:failed|error|exception)", re.I),
+    ),
 ]
 
 

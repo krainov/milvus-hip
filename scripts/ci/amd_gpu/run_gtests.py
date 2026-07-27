@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from .common import host_metadata, run_command, utc_now, write_json
+    from .common import host_metadata, run_command, sha256, utc_now, write_json
 except ImportError:
-    from common import host_metadata, run_command, utc_now, write_json
+    from common import host_metadata, run_command, sha256, utc_now, write_json
 
 
 DEFAULT_BINARIES = [
@@ -151,6 +151,15 @@ def source_commit(source: Path | None) -> str | None:
     return result["stdout"] if result["returncode"] == 0 else None
 
 
+def source_dirty(source: Path | None) -> bool | None:
+    if not source:
+        return None
+    result = run_command(
+        ["git", "-C", str(source), "status", "--porcelain", "--untracked-files=no"]
+    )
+    return bool(result["stdout"]) if result["returncode"] == 0 else None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run a common cuVS/hipVS gtest set")
     parser.add_argument(
@@ -193,15 +202,21 @@ def main() -> int:
         if not args.container_image and not binary.is_file():
             missing.append(name)
             continue
-        suites.append(
-            run_binary(
-                binary,
-                args.gtest_filter,
-                container_image=args.container_image,
-                host_source=args.container_host_source,
-                container_source=args.container_source,
-            )
+        suite = run_binary(
+            binary,
+            args.gtest_filter,
+            container_image=args.container_image,
+            host_source=args.container_host_source,
+            container_source=args.container_source,
         )
+        host_binary = (
+            args.container_host_source / binary.relative_to(args.container_source)
+            if args.container_image and args.container_host_source
+            else binary
+        )
+        if host_binary.is_file():
+            suite["binary_sha256"] = sha256(host_binary)
+        suites.append(suite)
 
     all_cases = [case for suite in suites for case in suite["cases"]]
     failed = [case["name"] for case in all_cases if case["status"] == "FAIL"]
@@ -221,6 +236,7 @@ def main() -> int:
         "host": host_metadata(),
         "gtest_dir": str(args.gtest_dir),
         "library_source_commit": source_commit(args.source_dir),
+        "library_source_dirty": source_dirty(args.source_dir),
         "container_image": args.container_image,
         "status": status,
         "n_cases": len(all_cases),

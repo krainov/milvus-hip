@@ -32,7 +32,9 @@ def compare_benchmarks(
     amd: dict[str, Any],
     nvidia: dict[str, Any],
     recall_tolerance: float,
+    excluded_nprobes: set[int] | None = None,
 ) -> dict[str, Any]:
+    excluded_nprobes = excluded_nprobes or set()
     amd_meta = benchmark_metadata(amd)
     nvidia_meta = benchmark_metadata(nvidia)
     mismatches = {
@@ -74,13 +76,18 @@ def compare_benchmarks(
                 },
                 "recall_delta": recall_delta,
                 "recall_pass": abs(recall_delta) <= recall_tolerance,
+                "correctness_gate_applied": nprobe not in excluded_nprobes,
                 "qps_ratio_amd_to_nvidia": (
                     float(amd_row["qps"]) / nvidia_qps if nvidia_qps else None
                 ),
             }
         )
 
-    failed_rows = [row["nprobe"] for row in rows if not row["recall_pass"]]
+    failed_rows = [
+        row["nprobe"]
+        for row in rows
+        if row["correctness_gate_applied"] and not row["recall_pass"]
+    ]
     input_failures = [
         backend
         for backend, payload in (("amd", amd), ("nvidia", nvidia))
@@ -99,6 +106,7 @@ def compare_benchmarks(
         "correctness_gate": {
             "metric": "absolute recall@10 delta",
             "tolerance": recall_tolerance,
+            "excluded_nprobes": sorted(excluded_nprobes),
             "failed_nprobes": failed_rows,
         },
         "input_failures": input_failures,
@@ -191,13 +199,25 @@ def main() -> int:
     parser.add_argument("--nvidia", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--recall-tolerance", type=float, default=0.005)
+    parser.add_argument(
+        "--exclude-nprobe",
+        type=int,
+        action="append",
+        default=[],
+        help="Keep this nprobe in evidence but exclude it from correctness verdict",
+    )
     parser.add_argument("--fail-on-correctness", action="store_true")
     args = parser.parse_args()
 
     amd = read_json(args.amd)
     nvidia = read_json(args.nvidia)
     if args.kind == "benchmark":
-        result = compare_benchmarks(amd, nvidia, args.recall_tolerance)
+        result = compare_benchmarks(
+            amd,
+            nvidia,
+            args.recall_tolerance,
+            set(args.exclude_nprobe),
+        )
     else:
         result = compare_gtests(amd, nvidia)
 

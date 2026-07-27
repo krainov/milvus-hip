@@ -47,6 +47,20 @@ class BenchmarkComparisonTest(unittest.TestCase):
         self.assertEqual("fail", result["status"])
         self.assertEqual(["amd"], result["input_failures"])
 
+    def test_excluded_nprobe_is_reported_but_does_not_fail(self) -> None:
+        self.amd["nprobe_results"][0]["recall@10"] = 0.20
+        result = compare_benchmarks(
+            self.amd,
+            self.nvidia,
+            0.005,
+            excluded_nprobes={1},
+        )
+        self.assertEqual("pass", result["status"])
+        self.assertFalse(result["rows"][0]["recall_pass"])
+        self.assertFalse(result["rows"][0]["correctness_gate_applied"])
+        self.assertEqual([], result["correctness_gate"]["failed_nprobes"])
+        self.assertEqual([1], result["correctness_gate"]["excluded_nprobes"])
+
 
 class GtestComparisonTest(unittest.TestCase):
     def test_shared_passing_case(self) -> None:
