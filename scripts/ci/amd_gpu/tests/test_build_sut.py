@@ -217,7 +217,9 @@ class BuildInputTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             result = secure_cached_conan_sources(Path(temporary))
 
-        self.assertEqual("recipe-not-cached", result[0]["status"])
+        self.assertTrue(
+            all(item["status"] == "recipe-not-cached" for item in result)
+        )
 
 
 if __name__ == "__main__":

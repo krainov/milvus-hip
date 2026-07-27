@@ -400,6 +400,22 @@ def secure_cached_conan_sources(conan_cache: Path) -> list[dict[str, Any]]:
             "http://www.oberhumer.com/opensource/lzo/download/lzo-2.10.tar.gz",
             "https://www.oberhumer.com/opensource/lzo/download/lzo-2.10.tar.gz",
         ),
+        (
+            Path("data/thrift/0.17.0/_/_/export/conandata.yml"),
+            "http://archive.apache.org/dist/thrift/0.17.0/thrift-0.17.0.tar.gz",
+            "https://archive.apache.org/dist/thrift/0.17.0/thrift-0.17.0.tar.gz",
+        ),
+        (
+            Path("data/libelf/0.8.13/_/_/export/conandata.yml"),
+            (
+                "http://repository.timesys.com/buildsources/l/libelf/"
+                "libelf-0.8.13/libelf-0.8.13.tar.gz"
+            ),
+            (
+                "https://repository.timesys.com/buildsources/l/libelf/"
+                "libelf-0.8.13/libelf-0.8.13.tar.gz"
+            ),
+        ),
     )
     results: list[dict[str, Any]] = []
     for relative, insecure_url, secure_url in overrides:
