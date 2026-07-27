@@ -19,6 +19,9 @@ class TriageTest(unittest.TestCase):
     def test_green_doctor_tool_names_are_not_failures(self) -> None:
         self.assertEqual([], classify("[PASS] hipcc\n[PASS] nvcc\nQPS: 1000"))
 
+    def test_successful_docker_pull_is_not_a_failure(self) -> None:
+        self.assertEqual([], classify("+ docker pull image\nStatus: up to date"))
+
     def test_classifies_node_identity_failure(self) -> None:
         matches = classify(
             "rpc error: node not match[expectedNodeID=17][actualNodeID=18]"

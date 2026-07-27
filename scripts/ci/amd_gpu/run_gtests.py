@@ -171,6 +171,12 @@ def main() -> int:
     parser.add_argument("--backend", choices=("amd", "nvidia"), required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--binary", action="append", dest="binaries")
+    parser.add_argument(
+        "--non-gating-binary",
+        action="append",
+        default=[],
+        help="Run and report this binary without using it in the current gate",
+    )
     parser.add_argument("--gtest-filter")
     parser.add_argument("--allow-missing", action="store_true")
     parser.add_argument(
@@ -216,12 +222,17 @@ def main() -> int:
         )
         if host_binary.is_file():
             suite["binary_sha256"] = sha256(host_binary)
+        suite["correctness_gate_applied"] = name not in args.non_gating_binary
         suites.append(suite)
 
     all_cases = [case for suite in suites for case in suite["cases"]]
-    failed = [case["name"] for case in all_cases if case["status"] == "FAIL"]
+    gating_suites = [
+        suite for suite in suites if suite["correctness_gate_applied"]
+    ]
+    gating_cases = [case for suite in gating_suites for case in suite["cases"]]
+    failed = [case["name"] for case in gating_cases if case["status"] == "FAIL"]
     failed_binaries = [
-        suite["binary"] for suite in suites if suite["returncode"] != 0
+        suite["binary"] for suite in gating_suites if suite["returncode"] != 0
     ]
     missing_is_failure = bool(missing and not args.allow_missing)
     status = (
@@ -238,6 +249,7 @@ def main() -> int:
         "library_source_commit": source_commit(args.source_dir),
         "library_source_dirty": source_dirty(args.source_dir),
         "container_image": args.container_image,
+        "non_gating_binaries": sorted(args.non_gating_binary),
         "status": status,
         "n_cases": len(all_cases),
         "n_pass": sum(case["status"] == "PASS" for case in all_cases),

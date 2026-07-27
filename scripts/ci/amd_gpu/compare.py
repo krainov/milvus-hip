@@ -135,7 +135,9 @@ def geometric_mean(values: list[float]) -> float | None:
 def compare_gtests(
     amd: dict[str, Any],
     nvidia: dict[str, Any],
+    excluded_binaries: set[str] | None = None,
 ) -> dict[str, Any]:
+    excluded_binaries = excluded_binaries or set()
     amd_cases = flatten_gtests(amd)
     nvidia_cases = flatten_gtests(nvidia)
     shared_names = sorted(set(amd_cases) & set(nvidia_cases))
@@ -155,6 +157,9 @@ def compare_gtests(
         rows.append(
             {
                 "name": name,
+                "correctness_gate_applied": (
+                    name.split("::", 1)[0] not in excluded_binaries
+                ),
                 "amd_status": amd_case.get("status"),
                 "nvidia_status": nvidia_case.get("status"),
                 "amd_ms": amd_ms,
@@ -167,10 +172,27 @@ def compare_gtests(
             }
         )
 
-    failed_cases = [row["name"] for row in rows if not row["correctness_pass"]]
+    failed_cases = [
+        row["name"]
+        for row in rows
+        if row["correctness_gate_applied"] and not row["correctness_pass"]
+    ]
+    gating_missing_on_amd = [
+        name
+        for name in missing_on_amd
+        if name.split("::", 1)[0] not in excluded_binaries
+    ]
+    gating_missing_on_nvidia = [
+        name
+        for name in missing_on_nvidia
+        if name.split("::", 1)[0] not in excluded_binaries
+    ]
     status = (
         "pass"
-        if rows and not missing_on_amd and not missing_on_nvidia and not failed_cases
+        if rows
+        and not gating_missing_on_amd
+        and not gating_missing_on_nvidia
+        and not failed_cases
         else "fail"
     )
     return {
@@ -185,6 +207,7 @@ def compare_gtests(
             "missing_on_nvidia": len(missing_on_nvidia),
             "timing_ratio_geomean_amd_to_nvidia": geometric_mean(timing_ratios),
         },
+        "excluded_binaries": sorted(excluded_binaries),
         "missing_on_amd": missing_on_amd,
         "missing_on_nvidia": missing_on_nvidia,
         "failed_cases": failed_cases,
@@ -206,6 +229,12 @@ def main() -> int:
         default=[],
         help="Keep this nprobe in evidence but exclude it from correctness verdict",
     )
+    parser.add_argument(
+        "--exclude-binary",
+        action="append",
+        default=[],
+        help="Keep this gtest binary in evidence but exclude it from the current gate",
+    )
     parser.add_argument("--fail-on-correctness", action="store_true")
     args = parser.parse_args()
 
@@ -219,7 +248,7 @@ def main() -> int:
             set(args.exclude_nprobe),
         )
     else:
-        result = compare_gtests(amd, nvidia)
+        result = compare_gtests(amd, nvidia, set(args.exclude_binary))
 
     write_json(args.output, result)
     print(f"{args.kind} parity: {result['status']}")

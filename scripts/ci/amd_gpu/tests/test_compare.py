@@ -112,6 +112,42 @@ class GtestComparisonTest(unittest.TestCase):
             result["failed_cases"],
         )
 
+    def test_excluded_binary_is_reported_but_does_not_fail(self) -> None:
+        amd = {
+            "suite": [
+                {
+                    "binary": "CAGRA_C_TEST",
+                    "cases": [{"name": "CagraC.Search", "status": "FAIL", "ms": 2}],
+                },
+                {
+                    "binary": "IVF_PQ_C_TEST",
+                    "cases": [{"name": "IvfPqC.Search", "status": "PASS", "ms": 2}],
+                },
+            ]
+        }
+        nvidia = {
+            "suite": [
+                {
+                    "binary": "CAGRA_C_TEST",
+                    "cases": [{"name": "CagraC.Search", "status": "PASS", "ms": 1}],
+                },
+                {
+                    "binary": "IVF_PQ_C_TEST",
+                    "cases": [{"name": "IvfPqC.Search", "status": "PASS", "ms": 1}],
+                },
+            ]
+        }
+
+        result = compare_gtests(
+            amd,
+            nvidia,
+            excluded_binaries={"CAGRA_C_TEST"},
+        )
+
+        self.assertEqual("pass", result["status"])
+        self.assertEqual([], result["failed_cases"])
+        self.assertFalse(result["rows"][0]["correctness_gate_applied"])
+
 
 if __name__ == "__main__":
     unittest.main()

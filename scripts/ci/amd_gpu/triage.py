@@ -23,7 +23,15 @@ SECRET_PATTERNS = [
 SIGNATURES = [
     ("runner", "runner_offline", re.compile(r"no runner matching|runner.*offline", re.I)),
     ("infrastructure", "disk_full", re.compile(r"no space left on device", re.I)),
-    ("infrastructure", "docker_failure", re.compile(r"docker.*(?:daemon|pull|timeout|failed)", re.I)),
+    (
+        "infrastructure",
+        "docker_failure",
+        re.compile(
+            r"(?:docker[^\n]{0,160}(?:daemon|timeout|failed|error))|"
+            r"(?:(?:failed|error)[^\n]{0,160}docker)",
+            re.I,
+        ),
+    ),
     ("infrastructure", "gpu_busy", re.compile(r"active compute processes|device.*busy", re.I)),
     (
         "compiler",

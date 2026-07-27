@@ -240,6 +240,7 @@ def build_nvidia(root: Path, source_commit: str) -> dict[str, Any]:
             "OS_NAME": "ubuntu22.04",
             "GPU_DATE_VERSION": "20240806-d8668fe",
             "LATEST_GPU_DATE_VERSION": "20240806-d8668fe",
+            "IS_NETWORK_MODE_HOST": "false",
             "ENABLE_AZURE": "false",
         }
     )

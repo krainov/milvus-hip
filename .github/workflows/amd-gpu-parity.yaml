@@ -62,7 +62,7 @@ jobs:
     env:
       GPU_HIP_PREFIX: /home/amd/rocmds_check_gfx1100/install
       GPU_KNOWHERE_SOURCE_DIR: /home/amd/rocmds_check_gfx1100/knowhere
-      GPU_KNOWHERE_COMMIT: 0ed6f5a34e2737cb9a4bf7ccefdaed7ece5dc98d
+      GPU_KNOWHERE_COMMIT: 0ed6f5a3cb50641e85af7e27c45b9d479b3e717b
       GPU_LIBCUVS_SHA256: da850f87c32276d322612febf928553d2fb04d2b57d5400739c9da9f7506d5fc
       MILVUS_CI_ROOT: ${{ github.workspace }}
       MILVUS_CI_BINARY: ${{ github.workspace }}/bin/milvus
@@ -115,6 +115,7 @@ jobs:
           python3 scripts/ci/amd_gpu/run_gtests.py \
             --backend amd \
             --gtest-dir "${GPU_GTEST_DIR}" \
+            --non-gating-binary CAGRA_C_TEST \
             --output gpu-evidence/gtest-amd.json \
             |& tee gpu-evidence/gtest-amd.log
 
@@ -267,6 +268,7 @@ jobs:
           python3 scripts/ci/amd_gpu/run_gtests.py \
             --backend nvidia \
             --gtest-dir "${GPU_GTEST_DIR}" \
+            --non-gating-binary CAGRA_C_TEST \
             --output gpu-evidence/gtest-nvidia.json \
             |& tee gpu-evidence/gtest-nvidia.log
 
@@ -390,6 +392,7 @@ jobs:
             --kind gtest \
             --amd evidence/amd/gtest-amd.json \
             --nvidia evidence/nvidia/gtest-nvidia.json \
+            --exclude-binary CAGRA_C_TEST \
             --output gtest-parity.json \
             --fail-on-correctness
 

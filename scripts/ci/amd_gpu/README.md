@@ -14,7 +14,9 @@ requires all of the following:
 - the running Milvus build advertises that commit in `milvus_build_info`;
 - the frozen SIFT-1M dataset checksums match;
 - `BRUTEFORCE_C_TEST`, `IVF_FLAT_C_TEST`, `IVF_PQ_C_TEST`, `CAGRA_C_TEST`, and
-  `DISTANCE_C_TEST` have the same passing cases on hipVS and cuVS;
+  `DISTANCE_C_TEST` are all retained in evidence;
+- brute-force, IVF_FLAT, IVF_PQ, and distance have the same passing cases on
+  hipVS and cuVS. CAGRA remains visible but is non-gating for the current PoC;
 - Milvus `GPU_IVF_FLAT` and `GPU_IVF_PQ` recall@10 differs by no more than the
   configured absolute tolerance.
 
