@@ -517,6 +517,7 @@ def build_nvidia(root: Path, source_commit: str) -> dict[str, Any]:
         ),
         cwd=root,
         env=build_env,
+        attempts=1,
         before_retry=cleanup_before_retry,
     )
     runtime_libraries = package_libraries(root)

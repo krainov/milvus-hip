@@ -32,7 +32,14 @@ SIGNATURES = [
             re.I,
         ),
     ),
-    ("infrastructure", "gpu_busy", re.compile(r"active compute processes|device.*busy", re.I)),
+    (
+        "infrastructure",
+        "gpu_busy",
+        re.compile(
+            r"active compute processes|device.*busy|\[FAIL\]\s+gpu-compute-processes",
+            re.I,
+        ),
+    ),
     (
         "build",
         "hip_backend_missing_rocm",

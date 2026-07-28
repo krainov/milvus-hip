@@ -16,6 +16,10 @@ class TriageTest(unittest.TestCase):
         matches = classify("GPU has active compute processes")
         self.assertEqual("gpu_busy", matches[0]["signature"])
 
+    def test_classifies_gpu_contention_from_doctor_summary(self) -> None:
+        matches = classify("[FAIL] gpu-compute-processes")
+        self.assertEqual("gpu_busy", matches[0]["signature"])
+
     def test_green_doctor_tool_names_are_not_failures(self) -> None:
         self.assertEqual([], classify("[PASS] hipcc\n[PASS] nvcc\nQPS: 1000"))
 
