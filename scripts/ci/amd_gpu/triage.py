@@ -99,7 +99,15 @@ SIGNATURES = [
         re.compile(r"(?:permission denied|can't write)[^\n]*(?:go/pkg/mod|\.conan)", re.I),
     ),
     ("correctness", "gtest_failure", re.compile(r"\[\s*FAILED\s*\]|assertion.*failed", re.I)),
-    ("correctness", "recall_gate", re.compile(r"recall.*(?:delta|tolerance|failed)", re.I)),
+    (
+        "correctness",
+        "recall_gate",
+        re.compile(
+            r"(?:\brecall@\d+\b|\brecall\s+(?:delta|tolerance|gate)\b)"
+            r"[^\n]{0,160}(?:delta|tolerance|fail(?:ed|ure)?|exceed)",
+            re.I,
+        ),
+    ),
     (
         "benchmark",
         "benchmark_failure",
@@ -129,23 +137,52 @@ def classify(text: str) -> list[dict[str, Any]]:
     return matches
 
 
+def parse_steps(entries: list[str]) -> dict[str, str]:
+    steps = {}
+    for entry in entries:
+        if "=" not in entry:
+            raise ValueError(f"invalid step outcome {entry!r}; expected NAME=OUTCOME")
+        name, outcome = entry.split("=", 1)
+        steps[name] = outcome
+    return steps
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Classify and redact a CI failure log")
     parser.add_argument("--log", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--max-chars", type=int, default=100_000)
+    parser.add_argument(
+        "--step",
+        action="append",
+        default=[],
+        metavar="NAME=OUTCOME",
+    )
     args = parser.parse_args()
 
     raw = args.log.read_text(errors="replace")
     excerpt = redact(raw[-args.max_chars :])
-    signatures = classify(excerpt)
+    steps = parse_steps(args.step)
+    failed_steps = [
+        name for name, outcome in steps.items() if outcome != "success"
+    ]
+    signatures = classify(excerpt) if failed_steps or not steps else []
+    if steps and not failed_steps:
+        status = "not-needed"
+        primary_category = "not-needed"
+        excerpt = ""
+    else:
+        status = "classified" if signatures else "unknown"
+        primary_category = signatures[0]["category"] if signatures else "unknown"
     payload = {
         "schema": "milvus.gpu-failure-triage.v1",
         "generated_at": utc_now(),
-        "status": "classified" if signatures else "unknown",
-        "primary_category": signatures[0]["category"] if signatures else "unknown",
+        "status": status,
+        "primary_category": primary_category,
         "signatures": signatures,
         "log_excerpt": excerpt,
+        "failed_steps": failed_steps,
+        "steps": steps,
     }
     write_json(args.output, payload)
     print(f"Failure category: {payload['primary_category']}")

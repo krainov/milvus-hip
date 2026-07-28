@@ -196,6 +196,14 @@ jobs:
           cat gpu-evidence/*.log > gpu-evidence/backend-amd.log
           python3 scripts/ci/amd_gpu/triage.py \
             --log gpu-evidence/backend-amd.log \
+            --step isolate=${{ steps.isolate.outcome }} \
+            --step doctor=${{ steps.doctor.outcome }} \
+            --step build=${{ steps.build.outcome }} \
+            --step gtests=${{ steps.gtests.outcome }} \
+            --step start-milvus=${{ steps.start_milvus.outcome }} \
+            --step ivf-flat=${{ steps.ivf_flat.outcome }} \
+            --step ivf-pq=${{ steps.ivf_pq.outcome }} \
+            --step cleanup=${{ steps.cleanup.outcome }} \
             --output gpu-evidence/triage-amd.json
 
       - name: Record AMD job status
@@ -376,6 +384,14 @@ jobs:
           cat gpu-evidence/*.log > gpu-evidence/backend-nvidia.log
           python3 scripts/ci/amd_gpu/triage.py \
             --log gpu-evidence/backend-nvidia.log \
+            --step isolate=${{ steps.isolate.outcome }} \
+            --step doctor=${{ steps.doctor.outcome }} \
+            --step build=${{ steps.build.outcome }} \
+            --step gtests=${{ steps.gtests.outcome }} \
+            --step start-milvus=${{ steps.start_milvus.outcome }} \
+            --step ivf-flat=${{ steps.ivf_flat.outcome }} \
+            --step ivf-pq=${{ steps.ivf_pq.outcome }} \
+            --step cleanup=${{ steps.cleanup.outcome }} \
             --output gpu-evidence/triage-nvidia.json
 
       - name: Record NVIDIA job status

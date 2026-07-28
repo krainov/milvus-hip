@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from scripts.ci.amd_gpu.triage import classify, redact
+from scripts.ci.amd_gpu.triage import classify, parse_steps, redact
 
 
 class TriageTest(unittest.TestCase):
@@ -54,6 +54,23 @@ class TriageTest(unittest.TestCase):
     def test_classifies_missing_exact_sut(self) -> None:
         matches = classify("Exact-SHA Milvus image is missing: milvus-ci:test")
         self.assertEqual("exact_sut_missing", matches[0]["signature"])
+
+    def test_recall_method_in_shutdown_error_is_not_a_recall_failure(self) -> None:
+        text = (
+            "grpcclient.(*ClientBase).ReCall\\n"
+            "failed to connect: connection refused"
+        )
+        self.assertEqual([], classify(text))
+
+    def test_classifies_explicit_recall_gate_failure(self) -> None:
+        matches = classify("recall@10 delta 0.02 exceeded tolerance 0.005")
+        self.assertEqual("recall_gate", matches[0]["signature"])
+
+    def test_parses_step_outcomes(self) -> None:
+        self.assertEqual(
+            {"build": "success", "benchmark": "failure"},
+            parse_steps(["build=success", "benchmark=failure"]),
+        )
 
 
 if __name__ == "__main__":
