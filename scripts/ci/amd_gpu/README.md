@@ -12,17 +12,19 @@ requires all of the following:
 - the AMD and NVIDIA jobs use the same pull request commit;
 - Milvus is rebuilt from a clean checkout of that exact commit on both runners;
 - the running Milvus build advertises that commit in `milvus_build_info`;
-- the frozen SIFT-1M dataset checksums match;
+- the frozen SIFT-1M and GIST-1M dataset checksums match their pinned values;
 - `BRUTEFORCE_C_TEST`, `IVF_FLAT_C_TEST`, `IVF_PQ_C_TEST`, `CAGRA_C_TEST`, and
   `DISTANCE_C_TEST` are all retained in evidence;
 - brute-force, IVF_FLAT, IVF_PQ, and distance have the same passing cases on
   hipVS and cuVS. CAGRA remains visible but is non-gating for the current PoC;
-- Milvus `GPU_IVF_FLAT` and `GPU_IVF_PQ` recall@10 differs by no more than the
-  configured absolute tolerance.
+- Milvus SIFT-1M `GPU_IVF_FLAT` and `GPU_IVF_PQ` recall@10 differs by no more
+  than `0.005`;
+- Milvus GIST-1M `GPU_IVF_PQ` recall@10 differs by no more than `0.01` at
+  `nprobe=8,16,32,64,128`.
 
-QPS, batch p99, index build time, and sampled peak VRAM are evidence, not
-correctness gates. `nprobe=1` is retained in the raw results but excluded from
-the correctness verdict because it is too noisy for this comparison.
+QPS, the AMD/NVIDIA QPS ratio, batch p99, index build time, and sampled peak
+VRAM are evidence, not correctness gates. `nprobe=1` is not executed because it
+is too noisy for this comparison.
 
 The benchmark inserts deterministic row IDs before comparing search results to
 the exact-KNN neighbors in the dataset. It rejects a stale server even if that
@@ -57,6 +59,7 @@ Both runners provide these non-secret values in their runner `.env` file:
 - `MILVUS_BENCH_URI`
 - `MILVUS_METRICS_URI`
 - `MILVUS_BENCH_DATASET`
+- `MILVUS_GIST_DATASET`
 - `MILVUS_CI_DEPENDENCY_CONTAINERS`
 
 NVIDIA gtests can run in a CUDA build container by also setting:

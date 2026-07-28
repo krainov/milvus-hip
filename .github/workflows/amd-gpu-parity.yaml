@@ -19,6 +19,8 @@ permissions:
 
 env:
   PYTHONUNBUFFERED: "1"
+  SIFT1M_SHA256: dd6f0a6ed6b7ebb8934680f861a33ed01ff33991eaee4fd60914d854a0ca5984
+  GIST1M_SHA256: 8e95831936bfdbfa0a56086942e2cf98cd703517c67f985914183eb4cdbf026a
   NVIDIA_BUILDER_IMAGE: milvusdb/milvus-env:gpu-ubuntu22.04-20240806-d8668fe
   NVIDIA_BUILDER_DIGEST: sha256:cdf41b4dae81a0ac0cf0efc4ee058dd7298ae6dd7ebd4bdf396a62916513e0a8
   NVIDIA_RUNTIME_BASE_IMAGE: milvusdb/milvus:v2.5.4-gpu@sha256:1f62c3b4096dfef2ffcf99ca628b9246f02d6c57cef99f0d299c2c8c144c4a3d
@@ -64,6 +66,7 @@ jobs:
       GPU_KNOWHERE_SOURCE_DIR: /home/amd/rocmds_check_gfx1100/knowhere
       GPU_KNOWHERE_COMMIT: 0ed6f5a3cb50641e85af7e27c45b9d479b3e717b
       GPU_LIBCUVS_SHA256: da850f87c32276d322612febf928553d2fb04d2b57d5400739c9da9f7506d5fc
+      MILVUS_GIST_DATASET: /home/amd/milvus-ci/data/gist-960-euclidean.hdf5
       MILVUS_CI_ROOT: ${{ github.workspace }}
       MILVUS_CI_BINARY: ${{ github.workspace }}/bin/milvus
       MILVUS_CI_GRPC_PORT: "29530"
@@ -160,7 +163,13 @@ jobs:
             --backend amd \
             --uri "${MILVUS_BENCH_URI}" \
             --dataset "${MILVUS_BENCH_DATASET}" \
+            --dataset-id SIFT1M \
+            --expected-dataset-sha256 "${SIFT1M_SHA256}" \
             --index-type GPU_IVF_FLAT \
+            --nprobe 4 \
+            --nprobe 8 \
+            --nprobe 16 \
+            --nprobe 32 \
             --max-query-rows 1000 \
             --require-source-match \
             --output gpu-evidence/benchmark-amd-ivf-flat.json \
@@ -174,13 +183,45 @@ jobs:
             --backend amd \
             --uri "${MILVUS_BENCH_URI}" \
             --dataset "${MILVUS_BENCH_DATASET}" \
+            --dataset-id SIFT1M \
+            --expected-dataset-sha256 "${SIFT1M_SHA256}" \
             --index-type GPU_IVF_PQ \
             --m 32 \
             --nbits 8 \
+            --nprobe 4 \
+            --nprobe 8 \
+            --nprobe 16 \
+            --nprobe 32 \
             --max-query-rows 1000 \
             --require-source-match \
             --output gpu-evidence/benchmark-amd-ivf-pq.json \
             |& tee gpu-evidence/benchmark-amd-ivf-pq.log
+
+      - name: Milvus GIST-1M GPU IVF_PQ benchmark
+        id: gist_ivf_pq
+        continue-on-error: true
+        run: |
+          "${GPU_BENCH_PYTHON}" scripts/ci/amd_gpu/benchmark_milvus.py \
+            --backend amd \
+            --uri "${MILVUS_BENCH_URI}" \
+            --dataset "${MILVUS_GIST_DATASET}" \
+            --dataset-id GIST1M \
+            --expected-dataset-sha256 "${GIST1M_SHA256}" \
+            --index-type GPU_IVF_PQ \
+            --nlist 1024 \
+            --m 32 \
+            --nbits 8 \
+            --k 10 \
+            --nprobe 8 \
+            --nprobe 16 \
+            --nprobe 32 \
+            --nprobe 64 \
+            --nprobe 128 \
+            --insert-batch 8000 \
+            --max-query-rows 1000 \
+            --require-source-match \
+            --output gpu-evidence/benchmark-amd-gist-ivf-pq.json \
+            |& tee gpu-evidence/benchmark-amd-gist-ivf-pq.log
 
       - name: Stop exact-SHA AMD Milvus
         id: cleanup
@@ -203,6 +244,7 @@ jobs:
             --step start-milvus=${{ steps.start_milvus.outcome }} \
             --step ivf-flat=${{ steps.ivf_flat.outcome }} \
             --step ivf-pq=${{ steps.ivf_pq.outcome }} \
+            --step gist-ivf-pq=${{ steps.gist_ivf_pq.outcome }} \
             --step cleanup=${{ steps.cleanup.outcome }} \
             --output gpu-evidence/triage-amd.json
 
@@ -218,6 +260,7 @@ jobs:
             --step start-milvus=${{ steps.start_milvus.outcome }} \
             --step ivf-flat=${{ steps.ivf_flat.outcome }} \
             --step ivf-pq=${{ steps.ivf_pq.outcome }} \
+            --step gist-ivf-pq=${{ steps.gist_ivf_pq.outcome }} \
             --step cleanup=${{ steps.cleanup.outcome }} \
             --output gpu-evidence/job-status-amd.json
 
@@ -240,6 +283,7 @@ jobs:
           test "${{ steps.start_milvus.outcome }}" = success
           test "${{ steps.ivf_flat.outcome }}" = success
           test "${{ steps.ivf_pq.outcome }}" = success
+          test "${{ steps.gist_ivf_pq.outcome }}" = success
           test "${{ steps.cleanup.outcome }}" = success
 
   nvidia:
@@ -251,6 +295,7 @@ jobs:
       GPU_BUILD_CACHE_ROOT: /home/kvkol/milvus-ci/build-cache
       GPU_KNOWHERE_SOURCE_DIR: /home/kvkol/milvus-ci/knowhere
       GPU_KNOWHERE_COMMIT: 0ed6f5a3cb50641e85af7e27c45b9d479b3e717b
+      MILVUS_GIST_DATASET: /home/kvkol/milvus-ci/data/gist-960-euclidean.hdf5
       MILVUS_CI_IMAGE: milvus-ci-nvidia:${{ github.sha }}
       MILVUS_CI_CONTAINER: milvus-ci-${{ github.run_id }}-${{ github.run_attempt }}-nvidia
       MILVUS_CI_GRPC_PORT: "29530"
@@ -348,7 +393,13 @@ jobs:
             --backend nvidia \
             --uri "${MILVUS_BENCH_URI}" \
             --dataset "${MILVUS_BENCH_DATASET}" \
+            --dataset-id SIFT1M \
+            --expected-dataset-sha256 "${SIFT1M_SHA256}" \
             --index-type GPU_IVF_FLAT \
+            --nprobe 4 \
+            --nprobe 8 \
+            --nprobe 16 \
+            --nprobe 32 \
             --max-query-rows 1000 \
             --require-source-match \
             --output gpu-evidence/benchmark-nvidia-ivf-flat.json \
@@ -362,13 +413,45 @@ jobs:
             --backend nvidia \
             --uri "${MILVUS_BENCH_URI}" \
             --dataset "${MILVUS_BENCH_DATASET}" \
+            --dataset-id SIFT1M \
+            --expected-dataset-sha256 "${SIFT1M_SHA256}" \
             --index-type GPU_IVF_PQ \
             --m 32 \
             --nbits 8 \
+            --nprobe 4 \
+            --nprobe 8 \
+            --nprobe 16 \
+            --nprobe 32 \
             --max-query-rows 1000 \
             --require-source-match \
             --output gpu-evidence/benchmark-nvidia-ivf-pq.json \
             |& tee gpu-evidence/benchmark-nvidia-ivf-pq.log
+
+      - name: Milvus GIST-1M GPU IVF_PQ benchmark
+        id: gist_ivf_pq
+        continue-on-error: true
+        run: |
+          "${GPU_BENCH_PYTHON}" scripts/ci/amd_gpu/benchmark_milvus.py \
+            --backend nvidia \
+            --uri "${MILVUS_BENCH_URI}" \
+            --dataset "${MILVUS_GIST_DATASET}" \
+            --dataset-id GIST1M \
+            --expected-dataset-sha256 "${GIST1M_SHA256}" \
+            --index-type GPU_IVF_PQ \
+            --nlist 1024 \
+            --m 32 \
+            --nbits 8 \
+            --k 10 \
+            --nprobe 8 \
+            --nprobe 16 \
+            --nprobe 32 \
+            --nprobe 64 \
+            --nprobe 128 \
+            --insert-batch 8000 \
+            --max-query-rows 1000 \
+            --require-source-match \
+            --output gpu-evidence/benchmark-nvidia-gist-ivf-pq.json \
+            |& tee gpu-evidence/benchmark-nvidia-gist-ivf-pq.log
 
       - name: Stop exact-SHA NVIDIA Milvus
         id: cleanup
@@ -391,6 +474,7 @@ jobs:
             --step start-milvus=${{ steps.start_milvus.outcome }} \
             --step ivf-flat=${{ steps.ivf_flat.outcome }} \
             --step ivf-pq=${{ steps.ivf_pq.outcome }} \
+            --step gist-ivf-pq=${{ steps.gist_ivf_pq.outcome }} \
             --step cleanup=${{ steps.cleanup.outcome }} \
             --output gpu-evidence/triage-nvidia.json
 
@@ -406,6 +490,7 @@ jobs:
             --step start-milvus=${{ steps.start_milvus.outcome }} \
             --step ivf-flat=${{ steps.ivf_flat.outcome }} \
             --step ivf-pq=${{ steps.ivf_pq.outcome }} \
+            --step gist-ivf-pq=${{ steps.gist_ivf_pq.outcome }} \
             --step cleanup=${{ steps.cleanup.outcome }} \
             --output gpu-evidence/job-status-nvidia.json
 
@@ -428,6 +513,7 @@ jobs:
           test "${{ steps.start_milvus.outcome }}" = success
           test "${{ steps.ivf_flat.outcome }}" = success
           test "${{ steps.ivf_pq.outcome }}" = success
+          test "${{ steps.gist_ivf_pq.outcome }}" = success
           test "${{ steps.cleanup.outcome }}" = success
 
   parity:
@@ -473,7 +559,6 @@ jobs:
             --amd evidence/amd/benchmark-amd-ivf-flat.json \
             --nvidia evidence/nvidia/benchmark-nvidia-ivf-flat.json \
             --recall-tolerance 0.005 \
-            --exclude-nprobe 1 \
             --output ivf-flat-parity.json \
             --fail-on-correctness
 
@@ -486,8 +571,19 @@ jobs:
             --amd evidence/amd/benchmark-amd-ivf-pq.json \
             --nvidia evidence/nvidia/benchmark-nvidia-ivf-pq.json \
             --recall-tolerance 0.005 \
-            --exclude-nprobe 1 \
             --output ivf-pq-parity.json \
+            --fail-on-correctness
+
+      - name: Compare GIST-1M IVF_PQ
+        id: gist_ivf_pq
+        continue-on-error: true
+        run: |
+          python3 scripts/ci/amd_gpu/compare.py \
+            --kind benchmark \
+            --amd evidence/amd/benchmark-amd-gist-ivf-pq.json \
+            --nvidia evidence/nvidia/benchmark-nvidia-gist-ivf-pq.json \
+            --recall-tolerance 0.01 \
+            --output gist-ivf-pq-parity.json \
             --fail-on-correctness
 
       - name: Claude failure triage
@@ -523,6 +619,7 @@ jobs:
             --input gtest-parity.json \
             --input ivf-flat-parity.json \
             --input ivf-pq-parity.json \
+            --input gist-ivf-pq-parity.json \
             --output claude-benchmark.json
 
       - name: Record skipped Claude narrator for PR
@@ -531,6 +628,7 @@ jobs:
           python3 scripts/ci/amd_gpu/claude_agent.py \
             --task benchmark \
             --input ivf-flat-parity.json \
+            --input gist-ivf-pq-parity.json \
             --output claude-benchmark.json
 
       - name: Build evidence pack
@@ -554,11 +652,14 @@ jobs:
             --input nvidia-ivf-flat=evidence/nvidia/benchmark-nvidia-ivf-flat.json \
             --input amd-ivf-pq=evidence/amd/benchmark-amd-ivf-pq.json \
             --input nvidia-ivf-pq=evidence/nvidia/benchmark-nvidia-ivf-pq.json \
+            --input amd-gist-ivf-pq=evidence/amd/benchmark-amd-gist-ivf-pq.json \
+            --input nvidia-gist-ivf-pq=evidence/nvidia/benchmark-nvidia-gist-ivf-pq.json \
             --input amd-triage=evidence/amd/triage-amd.json \
             --input nvidia-triage=evidence/nvidia/triage-nvidia.json \
             --input c-api-gtests=gtest-parity.json \
             --input ivf-flat=ivf-flat-parity.json \
             --input ivf-pq=ivf-pq-parity.json \
+            --input gist-ivf-pq=gist-ivf-pq-parity.json \
             --input claude-triage=claude-triage.json \
             --input claude-benchmark=claude-benchmark.json \
             --output-dir evidence-pack
@@ -584,4 +685,5 @@ jobs:
           test "${{ steps.gtests.outcome }}" = success
           test "${{ steps.ivf_flat.outcome }}" = success
           test "${{ steps.ivf_pq.outcome }}" = success
+          test "${{ steps.gist_ivf_pq.outcome }}" = success
           test "${{ steps.evidence.outcome }}" = success

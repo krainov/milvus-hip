@@ -16,7 +16,15 @@ except ImportError:
 def benchmark_metadata(payload: dict[str, Any]) -> dict[str, Any]:
     metadata = {
         key: payload.get(key)
-        for key in ("index_type", "nlist", "m", "nbits", "k", "dataset_sha256")
+        for key in (
+            "dataset_id",
+            "index_type",
+            "nlist",
+            "m",
+            "nbits",
+            "k",
+            "dataset_sha256",
+        )
     }
     provenance = payload.get("source_provenance", {})
     metadata.update(

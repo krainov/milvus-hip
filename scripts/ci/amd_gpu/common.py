@@ -35,6 +35,16 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def verify_sha256(path: Path, expected_sha256: str | None, label: str) -> str:
+    actual_sha256 = sha256(path)
+    if expected_sha256 and actual_sha256.lower() != expected_sha256.lower():
+        raise ValueError(
+            f"{label} SHA256 {actual_sha256} does not match expected "
+            f"{expected_sha256}"
+        )
+    return actual_sha256
+
+
 def retry_operation(
     operation: Callable[[], T],
     *,

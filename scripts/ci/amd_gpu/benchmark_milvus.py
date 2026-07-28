@@ -19,9 +19,9 @@ import numpy as np
 from pymilvus import DataType, MilvusClient
 
 try:
-    from .common import retry_operation, sha256, utc_now, write_json
+    from .common import retry_operation, sha256, utc_now, verify_sha256, write_json
 except ImportError:
-    from common import retry_operation, sha256, utc_now, write_json
+    from common import retry_operation, sha256, utc_now, verify_sha256, write_json
 
 
 TRANSIENT_MILVUS_ERRORS = (
@@ -151,12 +151,14 @@ class GpuMemorySampler:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Milvus SIFT exact-KNN parity benchmark")
+    parser = argparse.ArgumentParser(description="Milvus exact-KNN parity benchmark")
     parser.add_argument(
         "--uri",
         default=os.environ.get("MILVUS_BENCH_URI", "http://127.0.0.1:19530"),
     )
     parser.add_argument("--dataset", type=Path, required=True)
+    parser.add_argument("--dataset-id")
+    parser.add_argument("--expected-dataset-sha256")
     parser.add_argument("--backend", choices=("amd", "nvidia"), required=True)
     parser.add_argument(
         "--index-type",
@@ -188,6 +190,12 @@ def parse_args() -> argparse.Namespace:
 
 
 def benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    dataset_sha256 = verify_sha256(
+        args.dataset,
+        args.expected_dataset_sha256,
+        "dataset",
+    )
+    dataset_id = args.dataset_id or args.dataset.stem
     requested_commit = os.environ.get("GITHUB_SHA")
     build_info = server_build_info(args.metrics_uri)
     server_commit = args.server_source_commit or build_info["commit"]
@@ -201,7 +209,7 @@ def benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         if source_matches
         else ("fail" if args.require_source_match else "unverified")
     )
-    nprobes = args.nprobes or [1, 4, 8, 16, 32]
+    nprobes = args.nprobes or [4, 8, 16, 32]
 
     with h5py.File(args.dataset, "r") as dataset:
         train = np.asarray(dataset["train"], dtype=np.float32)
@@ -331,6 +339,7 @@ def benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         "status": "fail" if provenance_status == "fail" else "pass",
         "backend": args.backend,
         "host": socket.gethostname(),
+        "dataset_id": dataset_id,
         "uri": args.uri,
         "server_version": server_version,
         "server_build": build_info,
@@ -348,7 +357,7 @@ def benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         "nprobes": nprobes,
         "xb_shape": list(train.shape),
         "xq_shape": list(queries.shape),
-        "dataset_sha256": sha256(args.dataset),
+        "dataset_sha256": dataset_sha256,
         "operation_retries": operation_retries,
         "timings_s": timings,
         "vram": vram,
@@ -367,6 +376,7 @@ def main() -> int:
             "generated_at": utc_now(),
             "status": "fail",
             "backend": args.backend,
+            "dataset_id": args.dataset_id or args.dataset.stem,
             "index_type": args.index_type,
             "dataset_sha256": sha256(args.dataset) if args.dataset.is_file() else None,
             "source_provenance": {
