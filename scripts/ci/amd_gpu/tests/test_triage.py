@@ -19,6 +19,19 @@ class TriageTest(unittest.TestCase):
     def test_green_doctor_tool_names_are_not_failures(self) -> None:
         self.assertEqual([], classify("[PASS] hipcc\n[PASS] nvcc\nQPS: 1000"))
 
+    def test_missing_clang_tidy_is_not_a_compile_failure(self) -> None:
+        self.assertEqual([], classify("clang-tidy not found"))
+
+    def test_classifies_hip_backend_on_runner_without_rocm(self) -> None:
+        matches = classify("WITH_HIP: set ROCM_PATH or install ROCm under /opt/rocm")
+        self.assertEqual("hip_backend_missing_rocm", matches[0]["signature"])
+
+    def test_classifies_missing_cmake_package(self) -> None:
+        matches = classify(
+            'Could not find a package configuration file provided by "xxHash"'
+        )
+        self.assertEqual("cmake_package_missing", matches[0]["signature"])
+
     def test_successful_docker_pull_is_not_a_failure(self) -> None:
         self.assertEqual([], classify("+ docker pull image\nStatus: up to date"))
 

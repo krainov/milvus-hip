@@ -34,10 +34,25 @@ SIGNATURES = [
     ),
     ("infrastructure", "gpu_busy", re.compile(r"active compute processes|device.*busy", re.I)),
     (
+        "build",
+        "hip_backend_missing_rocm",
+        re.compile(r"WITH_HIP:\s*set ROCM_PATH or install ROCm", re.I),
+    ),
+    (
+        "build",
+        "cmake_package_missing",
+        re.compile(
+            r"(?:Could not find a package configuration file provided by|"
+            r"Could not find)[^\n]{0,160}|"
+            r"(?:xxHashConfig|xxhash-config)\.cmake",
+            re.I,
+        ),
+    ),
+    (
         "compiler",
         "hip_compile",
         re.compile(
-            r"(?:hipcc|clang|offload-arch)[^\n]{0,200}"
+            r"(?:hipcc|clang(?:\+\+)?(?!-tidy)|offload-arch)[^\n]{0,200}"
             r"(?:error:|failed|unsupported|not found)",
             re.I,
         ),
