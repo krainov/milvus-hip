@@ -3,11 +3,17 @@
 set -euo pipefail
 
 action=${1:?usage: milvus_service.sh <start|stop|status>}
-health_uri=${MILVUS_CI_HEALTH_URI:-http://127.0.0.1:9091/healthz}
+grpc_port=${MILVUS_CI_GRPC_PORT:-19530}
+internal_grpc_port=${MILVUS_CI_INTERNAL_GRPC_PORT:-19529}
+metrics_port=${MILVUS_CI_METRICS_PORT:-9091}
+health_uri=${MILVUS_CI_HEALTH_URI:-http://127.0.0.1:${metrics_port}/healthz}
 runtime_dir=${MILVUS_CI_RUNTIME_DIR:?MILVUS_CI_RUNTIME_DIR is required}
 
 runtime_env=(
     "MILVUS_CI_MANAGED=1"
+    "PROXY_PORT=${grpc_port}"
+    "PROXY_INTERNAL_PORT=${internal_grpc_port}"
+    "COMMON_METRICS_PORT=${metrics_port}"
     "ETCD_ENDPOINTS=${MILVUS_CI_ETCD_ENDPOINTS:-localhost:2379}"
     "ETCD_ROOT_PATH=${MILVUS_CI_ETCD_ROOT_PATH:?MILVUS_CI_ETCD_ROOT_PATH is required}"
     "MINIO_ADDRESS=${MILVUS_CI_MINIO_ADDRESS:-localhost:9000}"
@@ -193,8 +199,8 @@ start_container() {
         --network "${network}" \
         --gpus all \
         --ipc host \
-        --publish 19530:19530 \
-        --publish 9091:9091 \
+        --publish "127.0.0.1:${grpc_port}:${grpc_port}" \
+        --publish "127.0.0.1:${metrics_port}:${metrics_port}" \
         --volume "${runtime_dir}:/var/lib/milvus" \
         "${docker_env[@]}" \
         --env LOCAL_STORAGE_PATH=/var/lib/milvus/data \
@@ -208,7 +214,7 @@ verify_server_commit() {
     local expected=${GITHUB_SHA:-}
     [[ -z "${expected}" ]] && return 0
 
-    local metrics_uri=${MILVUS_METRICS_URI:-http://127.0.0.1:9091/metrics}
+    local metrics_uri=${MILVUS_METRICS_URI:-http://127.0.0.1:${metrics_port}/metrics}
     local server_commit
     server_commit=$(
         curl -fsS "${metrics_uri}" |

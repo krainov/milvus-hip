@@ -66,6 +66,12 @@ jobs:
       GPU_LIBCUVS_SHA256: da850f87c32276d322612febf928553d2fb04d2b57d5400739c9da9f7506d5fc
       MILVUS_CI_ROOT: ${{ github.workspace }}
       MILVUS_CI_BINARY: ${{ github.workspace }}/bin/milvus
+      MILVUS_CI_GRPC_PORT: "29530"
+      MILVUS_CI_INTERNAL_GRPC_PORT: "29529"
+      MILVUS_CI_METRICS_PORT: "29091"
+      MILVUS_CI_HEALTH_URI: http://127.0.0.1:29091/healthz
+      MILVUS_BENCH_URI: http://127.0.0.1:29530
+      MILVUS_METRICS_URI: http://127.0.0.1:29091/metrics
       MILVUS_CI_PID_FILE: /tmp/milvus-${{ github.run_id }}-${{ github.run_attempt }}-amd.pid
       MILVUS_CI_LOG_FILE: ${{ github.workspace }}/gpu-evidence/milvus-amd-server.log
       MILVUS_CI_RUNTIME_DIR: /tmp/milvus-${{ github.run_id }}-${{ github.run_attempt }}-amd
@@ -112,6 +118,15 @@ jobs:
         id: gtests
         continue-on-error: true
         run: |
+          if [ "${{ steps.doctor.outcome }}" != success ]; then
+            python3 scripts/ci/amd_gpu/run_gtests.py \
+              --backend amd \
+              --gtest-dir "${GPU_GTEST_DIR}" \
+              --non-gating-binary CAGRA_C_TEST \
+              --blocked-reason "runner doctor failed; GPU tests were not executed" \
+              --output gpu-evidence/gtest-amd.json \
+              |& tee gpu-evidence/gtest-amd.log
+          fi
           python3 scripts/ci/amd_gpu/run_gtests.py \
             --backend amd \
             --gtest-dir "${GPU_GTEST_DIR}" \
@@ -124,6 +139,8 @@ jobs:
         if: always()
         continue-on-error: true
         run: |
+          test "${{ steps.doctor.outcome }}" = success
+          test "${{ steps.build.outcome }}" = success
           bash scripts/ci/amd_gpu/milvus_service.sh start \
             |& tee gpu-evidence/start-milvus-amd.log
 
@@ -218,6 +235,12 @@ jobs:
       GPU_BUILD_CACHE_ROOT: /home/kvkol/milvus-ci/build-cache
       MILVUS_CI_IMAGE: milvus-ci-nvidia:${{ github.sha }}
       MILVUS_CI_CONTAINER: milvus-ci-${{ github.run_id }}-${{ github.run_attempt }}-nvidia
+      MILVUS_CI_GRPC_PORT: "29530"
+      MILVUS_CI_INTERNAL_GRPC_PORT: "29529"
+      MILVUS_CI_METRICS_PORT: "29091"
+      MILVUS_CI_HEALTH_URI: http://127.0.0.1:29091/healthz
+      MILVUS_BENCH_URI: http://127.0.0.1:29530
+      MILVUS_METRICS_URI: http://127.0.0.1:29091/metrics
       MILVUS_CI_DOCKER_NETWORK: milvus
       MILVUS_CI_RUNTIME_DIR: /tmp/milvus-${{ github.run_id }}-${{ github.run_attempt }}-nvidia
       MILVUS_CI_LOG_FILE: ${{ github.workspace }}/gpu-evidence/milvus-nvidia-server.log
@@ -267,6 +290,15 @@ jobs:
         id: gtests
         continue-on-error: true
         run: |
+          if [ "${{ steps.doctor.outcome }}" != success ]; then
+            python3 scripts/ci/amd_gpu/run_gtests.py \
+              --backend nvidia \
+              --gtest-dir "${GPU_GTEST_DIR}" \
+              --non-gating-binary CAGRA_C_TEST \
+              --blocked-reason "runner doctor failed; GPU tests were not executed" \
+              --output gpu-evidence/gtest-nvidia.json \
+              |& tee gpu-evidence/gtest-nvidia.log
+          fi
           python3 scripts/ci/amd_gpu/run_gtests.py \
             --backend nvidia \
             --gtest-dir "${GPU_GTEST_DIR}" \
@@ -279,6 +311,8 @@ jobs:
         if: always()
         continue-on-error: true
         run: |
+          test "${{ steps.doctor.outcome }}" = success
+          test "${{ steps.build.outcome }}" = success
           bash scripts/ci/amd_gpu/milvus_service.sh start \
             |& tee gpu-evidence/start-milvus-nvidia.log
 

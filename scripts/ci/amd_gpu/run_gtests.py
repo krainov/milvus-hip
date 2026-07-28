@@ -180,6 +180,10 @@ def main() -> int:
     parser.add_argument("--gtest-filter")
     parser.add_argument("--allow-missing", action="store_true")
     parser.add_argument(
+        "--blocked-reason",
+        help="Write explicit blocked evidence without executing GPU tests",
+    )
+    parser.add_argument(
         "--source-dir",
         type=Path,
         default=os.environ.get("GPU_LIBRARY_SOURCE_DIR"),
@@ -199,6 +203,30 @@ def main() -> int:
         default=Path(os.environ.get("GPU_GTEST_CONTAINER_SOURCE_DIR", "/workspace/cuvs")),
     )
     args = parser.parse_args()
+
+    if args.blocked_reason:
+        payload = {
+            "schema": "milvus.gpu-gtest-run.v1",
+            "generated_at": utc_now(),
+            "backend": args.backend,
+            "host": host_metadata(),
+            "gtest_dir": str(args.gtest_dir),
+            "library_source_commit": source_commit(args.source_dir),
+            "library_source_dirty": source_dirty(args.source_dir),
+            "container_image": args.container_image,
+            "non_gating_binaries": sorted(args.non_gating_binary),
+            "status": "fail",
+            "blocked_reason": args.blocked_reason,
+            "n_cases": 0,
+            "n_pass": 0,
+            "n_fail": 0,
+            "missing_binaries": [],
+            "failed_binaries": [],
+            "suite": [],
+        }
+        write_json(args.output, payload)
+        print(f"{args.backend} gtests blocked: {args.blocked_reason}")
+        return 1
 
     binaries = args.binaries or DEFAULT_BINARIES
     suites: list[dict[str, Any]] = []
