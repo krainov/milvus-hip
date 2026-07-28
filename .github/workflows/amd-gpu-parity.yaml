@@ -88,11 +88,19 @@ jobs:
         run: mkdir -p gpu-evidence
 
       - name: Isolate GPU
-        id: stop_milvus
+        id: isolate
         continue-on-error: true
         run: |
+          service_rc=0
           bash scripts/ci/amd_gpu/milvus_service.sh stop \
-            |& tee gpu-evidence/stop-milvus-amd.log
+            |& tee gpu-evidence/stop-milvus-amd.log || service_rc=$?
+          isolation_rc=0
+          python3 scripts/ci/amd_gpu/gpu_isolation.py \
+            --backend amd \
+            --output gpu-evidence/isolation-amd.json \
+            |& tee gpu-evidence/isolation-amd.log || isolation_rc=$?
+          test "${service_rc}" = 0
+          test "${isolation_rc}" = 0
 
       - name: Runner Doctor
         id: doctor
@@ -195,7 +203,7 @@ jobs:
         run: |
           python3 scripts/ci/amd_gpu/job_status.py \
             --backend amd \
-            --step stop-milvus=${{ steps.stop_milvus.outcome }} \
+            --step isolate=${{ steps.isolate.outcome }} \
             --step doctor=${{ steps.doctor.outcome }} \
             --step build=${{ steps.build.outcome }} \
             --step gtests=${{ steps.gtests.outcome }} \
@@ -217,7 +225,7 @@ jobs:
       - name: Enforce AMD execution
         if: always()
         run: |
-          test "${{ steps.stop_milvus.outcome }}" = success
+          test "${{ steps.isolate.outcome }}" = success
           test "${{ steps.doctor.outcome }}" = success
           test "${{ steps.build.outcome }}" = success
           test "${{ steps.gtests.outcome }}" = success
@@ -260,11 +268,19 @@ jobs:
         run: mkdir -p gpu-evidence
 
       - name: Isolate GPU
-        id: stop_milvus
+        id: isolate
         continue-on-error: true
         run: |
+          service_rc=0
           bash scripts/ci/amd_gpu/milvus_service.sh stop \
-            |& tee gpu-evidence/stop-milvus-nvidia.log
+            |& tee gpu-evidence/stop-milvus-nvidia.log || service_rc=$?
+          isolation_rc=0
+          python3 scripts/ci/amd_gpu/gpu_isolation.py \
+            --backend nvidia \
+            --output gpu-evidence/isolation-nvidia.json \
+            |& tee gpu-evidence/isolation-nvidia.log || isolation_rc=$?
+          test "${service_rc}" = 0
+          test "${isolation_rc}" = 0
 
       - name: Runner Doctor
         id: doctor
@@ -367,7 +383,7 @@ jobs:
         run: |
           python3 scripts/ci/amd_gpu/job_status.py \
             --backend nvidia \
-            --step stop-milvus=${{ steps.stop_milvus.outcome }} \
+            --step isolate=${{ steps.isolate.outcome }} \
             --step doctor=${{ steps.doctor.outcome }} \
             --step build=${{ steps.build.outcome }} \
             --step gtests=${{ steps.gtests.outcome }} \
@@ -389,7 +405,7 @@ jobs:
       - name: Enforce NVIDIA execution
         if: always()
         run: |
-          test "${{ steps.stop_milvus.outcome }}" = success
+          test "${{ steps.isolate.outcome }}" = success
           test "${{ steps.doctor.outcome }}" = success
           test "${{ steps.build.outcome }}" = success
           test "${{ steps.gtests.outcome }}" = success
@@ -510,6 +526,8 @@ jobs:
             --commit "${GITHUB_SHA}" \
             --input amd-job=evidence/amd/job-status-amd.json \
             --input nvidia-job=evidence/nvidia/job-status-nvidia.json \
+            --input amd-isolation=evidence/amd/isolation-amd.json \
+            --input nvidia-isolation=evidence/nvidia/isolation-nvidia.json \
             --input amd-doctor=evidence/amd/doctor-amd.json \
             --input nvidia-doctor=evidence/nvidia/doctor-nvidia.json \
             --input amd-build=evidence/amd/build-amd.json \

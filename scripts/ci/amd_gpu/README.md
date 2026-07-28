@@ -30,11 +30,15 @@ server produces good benchmark numbers.
 
 ## GPU isolation
 
-The workflow removes only CI-managed Milvus processes before Runner Doctor and
-the shared library gtests. Runner Doctor then requires an idle GPU. A newly
-built Milvus is started with run-specific storage roots and health/provenance
-checked before product benchmarks. `milvus_service.sh` supports a Docker
-container or host binary and leaves dependency containers running.
+Before Runner Doctor, the workflow acquires exclusive GPU access by gracefully
+stopping active GPU compute processes or their owning Docker containers. It
+does not remove containers, source trees, build trees, datasets, MinIO, or
+etcd. Runner Doctor then requires an idle GPU.
+
+A newly built Milvus is started with run-specific storage roots and
+health/provenance checked before product benchmarks. The final `always()`
+cleanup stops only the Milvus process or container marked as CI-managed and
+leaves dependency containers running.
 
 ## Runner contract
 
