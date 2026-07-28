@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+case "${1:-}" in
+    *Username*)
+        printf '%s\n' "x-access-token"
+        ;;
+    *Password*)
+        printf '%s\n' "${MILVUS_CI_GIT_TOKEN:?MILVUS_CI_GIT_TOKEN is required}"
+        ;;
+    *)
+        exit 1
+        ;;
+esac

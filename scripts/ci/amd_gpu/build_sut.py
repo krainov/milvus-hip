@@ -327,10 +327,11 @@ def prepare_nvidia_go_toolchain(
 
 def nvidia_compose_build_command(
     sumdb_cache: Path,
+    askpass_script: Path | None = None,
     version: str = "go1.22.0",
 ) -> list[str]:
     user = f"{os.getuid()}:{os.getgid()}"
-    return [
+    command = [
         "docker",
         "compose",
         "run",
@@ -346,10 +347,22 @@ def nvidia_compose_build_command(
         "ENABLE_AZURE=false",
         "--env",
         f"GOTOOLCHAIN={version}",
-        "gpubuilder",
-        "make",
-        "milvus-gpu",
     ]
+    if askpass_script is not None:
+        command.extend(
+            [
+                "--volume",
+                f"{askpass_script}:/tmp/milvus-ci-git-askpass:ro",
+                "--env",
+                "GIT_ASKPASS=/tmp/milvus-ci-git-askpass",
+                "--env",
+                "GIT_TERMINAL_PROMPT=0",
+                "--env",
+                "MILVUS_CI_GIT_TOKEN",
+            ]
+        )
+    command.extend(["gpubuilder", "make", "milvus-gpu"])
+    return command
 
 
 def cleanup_stale_nvidia_builders(
@@ -447,6 +460,10 @@ def build_nvidia(root: Path, source_commit: str) -> dict[str, Any]:
     builder_digest = required_env("NVIDIA_BUILDER_DIGEST")
     runtime_base = required_env("NVIDIA_RUNTIME_BASE_IMAGE")
     runtime_image = required_env("MILVUS_CI_IMAGE")
+    required_env("MILVUS_CI_GIT_TOKEN")
+    askpass_script = root / "scripts/ci/amd_gpu/git_askpass.sh"
+    if not askpass_script.is_file():
+        raise BuildError(f"Git askpass helper is missing: {askpass_script}")
     cache_root = Path(required_env("GPU_BUILD_CACHE_ROOT")).resolve()
     cache_root.mkdir(parents=True, exist_ok=True)
     cache = prepare_nvidia_cache(cache_root, "ubuntu22.04")
@@ -494,7 +511,10 @@ def build_nvidia(root: Path, source_commit: str) -> dict[str, Any]:
         secure_cached_conan_sources(cache_root / "ubuntu22.04-conan")
 
     run_live_with_retry(
-        nvidia_compose_build_command(cache_root / "ubuntu22.04-go-sumdb"),
+        nvidia_compose_build_command(
+            cache_root / "ubuntu22.04-go-sumdb",
+            askpass_script,
+        ),
         cwd=root,
         env=build_env,
         before_retry=cleanup_before_retry,

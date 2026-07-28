@@ -255,6 +255,8 @@ jobs:
       - name: Build NVIDIA Milvus from checkout SHA
         id: build
         continue-on-error: true
+        env:
+          MILVUS_CI_GIT_TOKEN: ${{ secrets.KNOWHERE_READ_TOKEN }}
         run: |
           python3 scripts/ci/amd_gpu/build_sut.py \
             --backend nvidia \
@@ -478,15 +480,15 @@ jobs:
             --input nvidia-doctor=evidence/nvidia/doctor-nvidia.json \
             --input amd-build=evidence/amd/build-amd.json \
             --input nvidia-build=evidence/nvidia/build-nvidia.json \
-            --input amd-gtests=evidence/amd/gtest-amd.json \
-            --input nvidia-gtests=evidence/nvidia/gtest-nvidia.json \
+            --input amd-c-api-gtests=evidence/amd/gtest-amd.json \
+            --input nvidia-c-api-gtests=evidence/nvidia/gtest-nvidia.json \
             --input amd-ivf-flat=evidence/amd/benchmark-amd-ivf-flat.json \
             --input nvidia-ivf-flat=evidence/nvidia/benchmark-nvidia-ivf-flat.json \
             --input amd-ivf-pq=evidence/amd/benchmark-amd-ivf-pq.json \
             --input nvidia-ivf-pq=evidence/nvidia/benchmark-nvidia-ivf-pq.json \
             --input amd-triage=evidence/amd/triage-amd.json \
             --input nvidia-triage=evidence/nvidia/triage-nvidia.json \
-            --input gtests=gtest-parity.json \
+            --input c-api-gtests=gtest-parity.json \
             --input ivf-flat=ivf-flat-parity.json \
             --input ivf-pq=ivf-pq-parity.json \
             --input claude-triage=claude-triage.json \

@@ -200,6 +200,28 @@ class BuildInputTest(unittest.TestCase):
         self.assertIn("GOTOOLCHAIN=go1.22.0", command)
         self.assertEqual(["gpubuilder", "make", "milvus-gpu"], command[-3:])
 
+    def test_nvidia_build_passes_private_git_auth_without_token_value(self) -> None:
+        with (
+            mock.patch("scripts.ci.amd_gpu.build_sut.os.getuid", return_value=1001),
+            mock.patch("scripts.ci.amd_gpu.build_sut.os.getgid", return_value=1002),
+        ):
+            command = nvidia_compose_build_command(
+                Path("/cache/sumdb"),
+                Path("/source/scripts/ci/amd_gpu/git_askpass.sh"),
+            )
+
+        self.assertIn(
+            (
+                "/source/scripts/ci/amd_gpu/git_askpass.sh:"
+                "/tmp/milvus-ci-git-askpass:ro"
+            ),
+            command,
+        )
+        self.assertIn("GIT_ASKPASS=/tmp/milvus-ci-git-askpass", command)
+        self.assertIn("GIT_TERMINAL_PROMPT=0", command)
+        self.assertIn("MILVUS_CI_GIT_TOKEN", command)
+        self.assertNotIn("x-access-token:", " ".join(command))
+
     def test_insecure_cached_conan_source_is_rewritten(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
