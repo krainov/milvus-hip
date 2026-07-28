@@ -233,6 +233,8 @@ jobs:
     timeout-minutes: 360
     env:
       GPU_BUILD_CACHE_ROOT: /home/kvkol/milvus-ci/build-cache
+      GPU_KNOWHERE_SOURCE_DIR: /home/kvkol/milvus-ci/knowhere
+      GPU_KNOWHERE_COMMIT: 0ed6f5a3cb50641e85af7e27c45b9d479b3e717b
       MILVUS_CI_IMAGE: milvus-ci-nvidia:${{ github.sha }}
       MILVUS_CI_CONTAINER: milvus-ci-${{ github.run_id }}-${{ github.run_attempt }}-nvidia
       MILVUS_CI_GRPC_PORT: "29530"
@@ -278,8 +280,6 @@ jobs:
       - name: Build NVIDIA Milvus from checkout SHA
         id: build
         continue-on-error: true
-        env:
-          MILVUS_CI_GIT_TOKEN: ${{ secrets.KNOWHERE_READ_TOKEN }}
         run: |
           python3 scripts/ci/amd_gpu/build_sut.py \
             --backend nvidia \
