@@ -14,12 +14,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Layer 3 AMD/HIP: GPU indexes come from HIP Knowhere/hipVS вЂ” do not enable
-# the CUDA language (requires nvcc). Keep MILVUS_GPU_VERSION for index registration.
-if(MILVUS_GPU_VERSION STREQUAL "ON")
+# HIP gets GPU indexes from hipVS and does not enable the CUDA language.
+# CUDA builds retain the upstream CUDA project configuration.
+if(MILVUS_GPU_VERSION STREQUAL "ON" AND WITH_HIP)
     message(STATUS "MILVUS Layer3 HIP: project(core CXX C) without CUDA language")
+    project(core CXX C)
+elseif(MILVUS_GPU_VERSION STREQUAL "ON")
+    message(STATUS "MILVUS Layer3 CUDA: project(core CXX C CUDA)")
+    project(core CXX C CUDA)
+else()
+    project(core CXX C)
 endif()
-project(core CXX C)
 
 option( EMBEDDED_MILVUS "Enable embedded Milvus" OFF )
 if ( EMBEDDED_MILVUS )

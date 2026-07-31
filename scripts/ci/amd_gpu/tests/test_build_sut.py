@@ -310,10 +310,16 @@ class BuildInputTest(unittest.TestCase):
         cmake = (
             root / "internal/core/thirdparty/knowhere/CMakeLists.txt"
         ).read_text()
+        core_cmake = (root / "internal/core/src/CMakeLists.txt").read_text()
 
         self.assertNotIn('set(WITH_HIP ON CACHE BOOL "" FORCE', cmake)
         self.assertIn("DEFINED MILVUS_WITH_HIP", cmake)
         self.assertIn("MILVUS GPU: WITH_CUVS=ON WITH_HIP=OFF (CUDA)", cmake)
+        self.assertIn(
+            'if(MILVUS_GPU_VERSION STREQUAL "ON" AND WITH_HIP)',
+            core_cmake,
+        )
+        self.assertIn("project(core CXX C CUDA)", core_cmake)
 
     def test_insecure_cached_conan_source_is_rewritten(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
