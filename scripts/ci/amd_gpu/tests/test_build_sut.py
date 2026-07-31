@@ -16,6 +16,7 @@ from scripts.ci.amd_gpu.build_sut import (
     prepare_nvidia_cache,
     prepare_nvidia_cmake,
     prepare_nvidia_go_toolchain,
+    prepare_nvidia_xxhash,
     secure_cached_conan_sources,
     verify_artifact,
     verify_checkout,
@@ -127,6 +128,7 @@ class BuildInputTest(unittest.TestCase):
                     "ubuntu22.04-conan",
                     "ubuntu22.04-go-mod",
                     "ubuntu22.04-go-sumdb",
+                    "ubuntu22.04-xxhash-0.8.2",
                     "ubuntu22.04-vscode-extensions",
                 },
                 {Path(path).name for path in result["directories"]},
@@ -217,6 +219,42 @@ class BuildInputTest(unittest.TestCase):
         self.assertIn("/tmp/.local/bin/cmake", verify_command)
         self.assertEqual("cmake version 3.30.4", result["reported"])
 
+    def test_nvidia_xxhash_is_built_static_from_pinned_source(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            mock.patch("scripts.ci.amd_gpu.build_sut.os.getuid", return_value=1001),
+            mock.patch("scripts.ci.amd_gpu.build_sut.os.getgid", return_value=1002),
+            mock.patch(
+                "scripts.ci.amd_gpu.build_sut.verify_dependency_source",
+                return_value={"commit": "b" * 40, "clean": True},
+            ),
+            mock.patch("scripts.ci.amd_gpu.build_sut.run_live") as run_live,
+        ):
+            temporary_root = Path(temporary)
+            install_root = temporary_root / "cache/xxhash"
+            config = install_root / "lib/cmake/xxHash/xxHashConfig.cmake"
+            library = install_root / "lib/libxxhash.a"
+            config.parent.mkdir(parents=True)
+            config.write_text("config\n")
+            library.write_bytes(b"static")
+
+            result = prepare_nvidia_xxhash(
+                Path("/source"),
+                "builder:tag",
+                Path("/ci/xxhash"),
+                install_root,
+                "b" * 40,
+            )
+
+        configure_command = run_live.call_args_list[0].args[0]
+        install_command = run_live.call_args_list[1].args[0]
+        self.assertIn("/ci/xxhash:/src/xxhash:ro", configure_command)
+        self.assertIn("-DBUILD_SHARED_LIBS=OFF", configure_command)
+        self.assertIn("-DXXHASH_BUILD_XXHSUM=OFF", configure_command)
+        self.assertIn("-DCMAKE_POSITION_INDEPENDENT_CODE=ON", configure_command)
+        self.assertIn("install", install_command)
+        self.assertEqual("b" * 40, result["source"]["commit"])
+
     def test_nvidia_build_reuses_preseeded_sumdb(self) -> None:
         with (
             mock.patch("scripts.ci.amd_gpu.build_sut.os.getuid", return_value=1001),
@@ -225,6 +263,7 @@ class BuildInputTest(unittest.TestCase):
             command = nvidia_compose_build_command(
                 Path("/cache/sumdb"),
                 Path("/cache/cmake"),
+                Path("/cache/xxhash"),
             )
 
         self.assertIn("1001:1002", command)
@@ -233,6 +272,7 @@ class BuildInputTest(unittest.TestCase):
         self.assertIn("ENABLE_AZURE=false", command)
         self.assertIn("GOTOOLCHAIN=go1.22.0", command)
         self.assertIn("/cache/cmake:/tmp/.local:ro", command)
+        self.assertIn("/cache/xxhash:/opt/milvus-ci/xxhash:ro", command)
         self.assertTrue(
             any(value.startswith("PATH=/tmp/.local/bin:") for value in command)
         )
@@ -247,6 +287,7 @@ class BuildInputTest(unittest.TestCase):
             command = nvidia_compose_build_command(
                 Path("/cache/sumdb"),
                 Path("/cache/cmake"),
+                Path("/cache/xxhash"),
                 Path("/ci/knowhere"),
             )
 
@@ -255,7 +296,8 @@ class BuildInputTest(unittest.TestCase):
             (
                 "CMAKE_EXTRA_ARGS="
                 "-DMILVUS_KNOWHERE_SOURCE_DIR=/opt/milvus-ci/knowhere "
-                "-DMILVUS_WITH_HIP=OFF -DWITH_HIP=OFF -DWITH_CUVS=ON"
+                "-DMILVUS_WITH_HIP=OFF -DWITH_HIP=OFF -DWITH_CUVS=ON "
+                "-DxxHash_DIR=/opt/milvus-ci/xxhash/lib/cmake/xxHash"
             ),
             command,
         )

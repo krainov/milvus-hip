@@ -297,6 +297,8 @@ jobs:
       GPU_BUILD_CACHE_ROOT: /home/kvkol/milvus-ci/build-cache
       GPU_KNOWHERE_SOURCE_DIR: /home/kvkol/milvus-ci/knowhere
       GPU_KNOWHERE_COMMIT: 78626c87cd2605f0532783848288d2142ab3ab1f
+      GPU_XXHASH_SOURCE_DIR: /home/kvkol/milvus-ci/xxhash
+      GPU_XXHASH_COMMIT: bbb27a5efb85b92a0486cf361a8635715a53f6ba
       MILVUS_GIST_DATASET: /home/kvkol/milvus-ci/data/gist-960-euclidean.hdf5
       MILVUS_CI_IMAGE: milvus-ci-nvidia:${{ github.sha }}
       MILVUS_CI_CONTAINER: milvus-ci-${{ github.run_id }}-${{ github.run_attempt }}-nvidia

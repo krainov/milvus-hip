@@ -7,6 +7,7 @@ import os
 import shlex
 import shutil
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -277,6 +278,7 @@ def prepare_nvidia_cache(cache_root: Path, os_name: str) -> dict[str, Any]:
         "cmake-3.30.4",
         "go-mod",
         "go-sumdb",
+        "xxhash-0.8.2",
         "vscode-extensions",
         "conan",
     ):
@@ -287,6 +289,87 @@ def prepare_nvidia_cache(cache_root: Path, os_name: str) -> dict[str, Any]:
     return {
         "root": str(cache_root),
         "directories": directories,
+    }
+
+
+def prepare_nvidia_xxhash(
+    root: Path,
+    builder_image: str,
+    source_root: Path,
+    install_root: Path,
+    expected_commit: str,
+) -> dict[str, Any]:
+    source = verify_dependency_source(source_root, expected_commit)
+    install_root.mkdir(parents=True, exist_ok=True)
+    install_root.chmod(0o777)
+    user = f"{os.getuid()}:{os.getgid()}"
+    with tempfile.TemporaryDirectory(
+        prefix="milvus-xxhash-build-",
+        dir=install_root.parent,
+    ) as temporary:
+        build_root = Path(temporary)
+        common = [
+            "docker",
+            "run",
+            "--rm",
+            "--user",
+            user,
+            "--env",
+            "HOME=/tmp",
+            "--volume",
+            f"{source_root}:/src/xxhash:ro",
+            "--volume",
+            f"{build_root}:/tmp/xxhash-build",
+            "--volume",
+            f"{install_root}:/tmp/xxhash-install",
+            builder_image,
+        ]
+        run_live(
+            [
+                *common,
+                "cmake",
+                "-S",
+                "/src/xxhash/cmake_unofficial",
+                "-B",
+                "/tmp/xxhash-build",
+                "-DBUILD_SHARED_LIBS=OFF",
+                "-DXXHASH_BUILD_XXHSUM=OFF",
+                "-DCMAKE_BUILD_TYPE=Release",
+                "-DCMAKE_POSITION_INDEPENDENT_CODE=ON",
+                "-DCMAKE_INSTALL_PREFIX=/tmp/xxhash-install",
+            ],
+            cwd=root,
+        )
+        run_live(
+            [
+                *common,
+                "cmake",
+                "--build",
+                "/tmp/xxhash-build",
+                "--target",
+                "install",
+                "--parallel",
+                "2",
+            ],
+            cwd=root,
+        )
+
+    config = install_root / "lib/cmake/xxHash/xxHashConfig.cmake"
+    library = install_root / "lib/libxxhash.a"
+    if not config.is_file() or not library.is_file():
+        raise BuildError(f"pinned xxHash install is incomplete under {install_root}")
+    return {
+        "source": source,
+        "user": user,
+        "install_root": str(install_root),
+        "config": {
+            "path": str(config),
+            "sha256": sha256(config),
+        },
+        "library": {
+            "path": str(library),
+            "sha256": sha256(library),
+        },
     }
 
 
@@ -382,6 +465,7 @@ def prepare_nvidia_go_toolchain(
 def nvidia_compose_build_command(
     sumdb_cache: Path,
     cmake_root: Path,
+    xxhash_root: Path,
     knowhere_source: Path | None = None,
     version: str = "go1.22.0",
 ) -> list[str]:
@@ -398,6 +482,8 @@ def nvidia_compose_build_command(
         f"{sumdb_cache}:/go/pkg/sumdb",
         "--volume",
         f"{cmake_root}:/tmp/.local:ro",
+        "--volume",
+        f"{xxhash_root}:/opt/milvus-ci/xxhash:ro",
         "--env",
         "HOME=/tmp",
         "--env",
@@ -420,7 +506,8 @@ def nvidia_compose_build_command(
                 (
                     "CMAKE_EXTRA_ARGS="
                     "-DMILVUS_KNOWHERE_SOURCE_DIR=/opt/milvus-ci/knowhere "
-                    "-DMILVUS_WITH_HIP=OFF -DWITH_HIP=OFF -DWITH_CUVS=ON"
+                    "-DMILVUS_WITH_HIP=OFF -DWITH_HIP=OFF -DWITH_CUVS=ON "
+                    "-DxxHash_DIR=/opt/milvus-ci/xxhash/lib/cmake/xxHash"
                 ),
                 "--env",
                 "MILVUS_WITH_HIP=0",
@@ -532,6 +619,7 @@ def build_nvidia(root: Path, source_commit: str) -> dict[str, Any]:
         knowhere_source,
         required_env("GPU_KNOWHERE_COMMIT"),
     )
+    xxhash_source = Path(required_env("GPU_XXHASH_SOURCE_DIR")).resolve()
     cache_root = Path(required_env("GPU_BUILD_CACHE_ROOT")).resolve()
     cache_root.mkdir(parents=True, exist_ok=True)
     cache = prepare_nvidia_cache(cache_root, "ubuntu22.04")
@@ -555,6 +643,13 @@ def build_nvidia(root: Path, source_commit: str) -> dict[str, Any]:
         root,
         builder_image,
         cache_root / "ubuntu22.04-cmake-3.30.4",
+    )
+    xxhash = prepare_nvidia_xxhash(
+        root,
+        builder_image,
+        xxhash_source,
+        cache_root / "ubuntu22.04-xxhash-0.8.2",
+        required_env("GPU_XXHASH_COMMIT"),
     )
     go_toolchain = prepare_nvidia_go_toolchain(
         root,
@@ -587,6 +682,7 @@ def build_nvidia(root: Path, source_commit: str) -> dict[str, Any]:
         nvidia_compose_build_command(
             cache_root / "ubuntu22.04-go-sumdb",
             cache_root / "ubuntu22.04-cmake-3.30.4",
+            cache_root / "ubuntu22.04-xxhash-0.8.2",
             knowhere_source,
         ),
         cwd=root,
@@ -629,6 +725,7 @@ def build_nvidia(root: Path, source_commit: str) -> dict[str, Any]:
         "cache": cache,
         "cmake": cmake,
         "knowhere": knowhere,
+        "xxhash": xxhash,
         "go_toolchain": go_toolchain,
         "stale_state": stale_state,
         "runtime_base_image": runtime_base,
