@@ -507,7 +507,8 @@ def nvidia_compose_build_command(
                     "CMAKE_EXTRA_ARGS="
                     "-DMILVUS_KNOWHERE_SOURCE_DIR=/opt/milvus-ci/knowhere "
                     "-DMILVUS_WITH_HIP=OFF -DWITH_HIP=OFF -DWITH_CUVS=ON "
-                    "-DxxHash_DIR=/opt/milvus-ci/xxhash/lib/cmake/xxHash"
+                    "-DxxHash_DIR=/opt/milvus-ci/xxhash/lib/cmake/xxHash "
+                    "-DxxHash_INCLUDE_DIRS=/opt/milvus-ci/xxhash/include"
                 ),
                 "--env",
                 "MILVUS_WITH_HIP=0",
