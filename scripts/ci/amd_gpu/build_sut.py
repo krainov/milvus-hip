@@ -278,6 +278,7 @@ def prepare_nvidia_cache(cache_root: Path, os_name: str) -> dict[str, Any]:
         "cmake-3.30.4",
         "go-mod",
         "go-sumdb",
+        "rust-1.73.0",
         "xxhash-0.8.2",
         "vscode-extensions",
         "conan",
@@ -423,6 +424,100 @@ def prepare_nvidia_cmake(
     }
 
 
+def prepare_nvidia_rust_toolchain(
+    root: Path,
+    builder_image: str,
+    install_root: Path,
+    builder_digest: str,
+) -> dict[str, Any]:
+    user = f"{os.getuid()}:{os.getgid()}"
+    cargo_root = install_root / "cargo"
+    rustup_root = install_root / "rustup"
+    marker = install_root / ".builder-digest"
+    expected_marker = f"{builder_digest}\n"
+    if (
+        not (cargo_root / "bin/cargo").is_file()
+        or not rustup_root.is_dir()
+        or not marker.is_file()
+        or marker.read_text() != expected_marker
+    ):
+        install_root.mkdir(parents=True, exist_ok=True)
+        install_root.chmod(0o777)
+        run_live(
+            [
+                "docker",
+                "run",
+                "--rm",
+                "--env",
+                f"CI_UID={os.getuid()}",
+                "--env",
+                f"CI_GID={os.getgid()}",
+                "--env",
+                f"BUILDER_DIGEST={builder_digest}",
+                "--volume",
+                f"{install_root}:/opt/milvus-ci/rust",
+                builder_image,
+                "sh",
+                "-ceu",
+                (
+                    "rm -rf /opt/milvus-ci/rust/cargo "
+                    "/opt/milvus-ci/rust/rustup; "
+                    "mkdir -p /opt/milvus-ci/rust/cargo "
+                    "/opt/milvus-ci/rust/rustup; "
+                    "cp -a /root/.cargo/. /opt/milvus-ci/rust/cargo/; "
+                    "cp -a /root/.rustup/. /opt/milvus-ci/rust/rustup/; "
+                    "chown -R \"$CI_UID:$CI_GID\" "
+                    "/opt/milvus-ci/rust/cargo; "
+                    "chmod -R a+rX /opt/milvus-ci/rust/rustup; "
+                    "printf '%s\\n' \"$BUILDER_DIGEST\" > "
+                    "/opt/milvus-ci/rust/.builder-digest"
+                ),
+            ],
+            cwd=root,
+        )
+
+    common = [
+        "docker",
+        "run",
+        "--rm",
+        "--user",
+        user,
+        "--env",
+        "HOME=/tmp",
+        "--env",
+        "CARGO_HOME=/opt/milvus-ci/rust/cargo",
+        "--env",
+        "RUSTUP_HOME=/opt/milvus-ci/rust/rustup",
+        "--env",
+        (
+            "PATH=/opt/milvus-ci/rust/cargo/bin:/usr/local/bin:"
+            "/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin"
+        ),
+        "--volume",
+        f"{install_root}:/opt/milvus-ci/rust",
+        builder_image,
+    ]
+    cargo = run_command([*common, "cargo", "--version"])
+    rustc = run_command([*common, "rustc", "--version"])
+    if cargo["returncode"] != 0 or not cargo["stdout"].startswith("cargo 1.73.0 "):
+        raise BuildError(
+            "NVIDIA builder Cargo verification failed: "
+            f"{cargo['stdout'] or cargo['stderr']}"
+        )
+    if rustc["returncode"] != 0 or not rustc["stdout"].startswith("rustc 1.73.0 "):
+        raise BuildError(
+            "NVIDIA builder rustc verification failed: "
+            f"{rustc['stdout'] or rustc['stderr']}"
+        )
+    return {
+        "cargo": cargo["stdout"],
+        "rustc": rustc["stdout"],
+        "user": user,
+        "install_root": str(install_root),
+        "builder_digest": builder_digest,
+    }
+
+
 def prepare_nvidia_go_toolchain(
     root: Path,
     builder_image: str,
@@ -466,6 +561,7 @@ def nvidia_compose_build_command(
     sumdb_cache: Path,
     cmake_root: Path,
     xxhash_root: Path,
+    rust_root: Path,
     knowhere_source: Path | None = None,
     version: str = "go1.22.0",
 ) -> list[str]:
@@ -484,15 +580,21 @@ def nvidia_compose_build_command(
         f"{cmake_root}:/tmp/.local:ro",
         "--volume",
         f"{xxhash_root}:/opt/milvus-ci/xxhash:ro",
+        "--volume",
+        f"{rust_root}:/opt/milvus-ci/rust",
         "--env",
         "HOME=/tmp",
+        "--env",
+        "CARGO_HOME=/opt/milvus-ci/rust/cargo",
+        "--env",
+        "RUSTUP_HOME=/opt/milvus-ci/rust/rustup",
         "--env",
         "ENABLE_AZURE=false",
         "--env",
         f"GOTOOLCHAIN={version}",
         "--env",
         (
-            "PATH=/tmp/.local/bin:/root/.cargo/bin:/usr/local/bin:"
+            "PATH=/tmp/.local/bin:/opt/milvus-ci/rust/cargo/bin:/usr/local/bin:"
             "/usr/local/go/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:"
             "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
         ),
@@ -652,6 +754,12 @@ def build_nvidia(root: Path, source_commit: str) -> dict[str, Any]:
         cache_root / "ubuntu22.04-xxhash-0.8.2",
         required_env("GPU_XXHASH_COMMIT"),
     )
+    rust_toolchain = prepare_nvidia_rust_toolchain(
+        root,
+        builder_image,
+        cache_root / "ubuntu22.04-rust-1.73.0",
+        builder_digest,
+    )
     go_toolchain = prepare_nvidia_go_toolchain(
         root,
         builder_image,
@@ -684,6 +792,7 @@ def build_nvidia(root: Path, source_commit: str) -> dict[str, Any]:
             cache_root / "ubuntu22.04-go-sumdb",
             cache_root / "ubuntu22.04-cmake-3.30.4",
             cache_root / "ubuntu22.04-xxhash-0.8.2",
+            cache_root / "ubuntu22.04-rust-1.73.0",
             knowhere_source,
         ),
         cwd=root,
@@ -727,6 +836,7 @@ def build_nvidia(root: Path, source_commit: str) -> dict[str, Any]:
         "cmake": cmake,
         "knowhere": knowhere,
         "xxhash": xxhash,
+        "rust_toolchain": rust_toolchain,
         "go_toolchain": go_toolchain,
         "stale_state": stale_state,
         "runtime_base_image": runtime_base,

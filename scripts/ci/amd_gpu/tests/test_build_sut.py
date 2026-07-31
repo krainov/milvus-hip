@@ -16,6 +16,7 @@ from scripts.ci.amd_gpu.build_sut import (
     prepare_nvidia_cache,
     prepare_nvidia_cmake,
     prepare_nvidia_go_toolchain,
+    prepare_nvidia_rust_toolchain,
     prepare_nvidia_xxhash,
     secure_cached_conan_sources,
     verify_artifact,
@@ -128,6 +129,7 @@ class BuildInputTest(unittest.TestCase):
                     "ubuntu22.04-conan",
                     "ubuntu22.04-go-mod",
                     "ubuntu22.04-go-sumdb",
+                    "ubuntu22.04-rust-1.73.0",
                     "ubuntu22.04-xxhash-0.8.2",
                     "ubuntu22.04-vscode-extensions",
                 },
@@ -255,6 +257,34 @@ class BuildInputTest(unittest.TestCase):
         self.assertIn("install", install_command)
         self.assertEqual("b" * 40, result["source"]["commit"])
 
+    def test_nvidia_rust_toolchain_is_rehomed_for_runner_user(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            mock.patch("scripts.ci.amd_gpu.build_sut.os.getuid", return_value=1001),
+            mock.patch("scripts.ci.amd_gpu.build_sut.os.getgid", return_value=1002),
+            mock.patch("scripts.ci.amd_gpu.build_sut.run_live") as run_live,
+            mock.patch(
+                "scripts.ci.amd_gpu.build_sut.run_command",
+                side_effect=[
+                    {"returncode": 0, "stdout": "cargo 1.73.0 (test)", "stderr": ""},
+                    {"returncode": 0, "stdout": "rustc 1.73.0 (test)", "stderr": ""},
+                ],
+            ),
+        ):
+            install_root = Path(temporary) / "rust"
+            result = prepare_nvidia_rust_toolchain(
+                Path("/source"),
+                "builder:tag",
+                install_root,
+                "sha256:" + "a" * 64,
+            )
+
+        copy_command = run_live.call_args.args[0]
+        self.assertIn(f"{install_root}:/opt/milvus-ci/rust", copy_command)
+        self.assertIn("CI_UID=1001", copy_command)
+        self.assertIn("CI_GID=1002", copy_command)
+        self.assertEqual("cargo 1.73.0 (test)", result["cargo"])
+
     def test_nvidia_build_reuses_preseeded_sumdb(self) -> None:
         with (
             mock.patch("scripts.ci.amd_gpu.build_sut.os.getuid", return_value=1001),
@@ -264,6 +294,7 @@ class BuildInputTest(unittest.TestCase):
                 Path("/cache/sumdb"),
                 Path("/cache/cmake"),
                 Path("/cache/xxhash"),
+                Path("/cache/rust"),
             )
 
         self.assertIn("1001:1002", command)
@@ -273,6 +304,9 @@ class BuildInputTest(unittest.TestCase):
         self.assertIn("GOTOOLCHAIN=go1.22.0", command)
         self.assertIn("/cache/cmake:/tmp/.local:ro", command)
         self.assertIn("/cache/xxhash:/opt/milvus-ci/xxhash:ro", command)
+        self.assertIn("/cache/rust:/opt/milvus-ci/rust", command)
+        self.assertIn("CARGO_HOME=/opt/milvus-ci/rust/cargo", command)
+        self.assertIn("RUSTUP_HOME=/opt/milvus-ci/rust/rustup", command)
         self.assertTrue(
             any(value.startswith("PATH=/tmp/.local/bin:") for value in command)
         )
@@ -288,6 +322,7 @@ class BuildInputTest(unittest.TestCase):
                 Path("/cache/sumdb"),
                 Path("/cache/cmake"),
                 Path("/cache/xxhash"),
+                Path("/cache/rust"),
                 Path("/ci/knowhere"),
             )
 
