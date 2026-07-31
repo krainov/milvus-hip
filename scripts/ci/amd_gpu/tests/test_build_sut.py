@@ -236,6 +236,7 @@ class BuildInputTest(unittest.TestCase):
         self.assertTrue(
             any(value.startswith("PATH=/tmp/.local/bin:") for value in command)
         )
+        self.assertTrue(any("/usr/local/go/bin" in value for value in command))
         self.assertEqual(["gpubuilder", "make", "milvus-gpu"], command[-3:])
 
     def test_nvidia_build_mounts_pinned_knowhere_source(self) -> None:

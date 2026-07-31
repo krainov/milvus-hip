@@ -406,8 +406,9 @@ def nvidia_compose_build_command(
         f"GOTOOLCHAIN={version}",
         "--env",
         (
-            "PATH=/tmp/.local/bin:/usr/local/cuda/bin:/usr/local/sbin:"
-            "/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            "PATH=/tmp/.local/bin:/root/.cargo/bin:/usr/local/bin:"
+            "/usr/local/go/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:"
+            "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
         ),
     ]
     if knowhere_source is not None:
