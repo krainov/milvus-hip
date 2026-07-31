@@ -214,11 +214,24 @@ class BuildInputTest(unittest.TestCase):
         self.assertIn(
             (
                 "CMAKE_EXTRA_ARGS="
-                "-DMILVUS_KNOWHERE_SOURCE_DIR=/opt/milvus-ci/knowhere"
+                "-DMILVUS_KNOWHERE_SOURCE_DIR=/opt/milvus-ci/knowhere "
+                "-DMILVUS_WITH_HIP=OFF -DWITH_HIP=OFF -DWITH_CUVS=ON"
             ),
             command,
         )
+        self.assertIn("MILVUS_WITH_HIP=0", command)
+        self.assertIn("KNOWHERE_WITH_HIP=0", command)
         self.assertNotIn("TOKEN", " ".join(command).upper())
+
+    def test_milvus_cmake_requires_explicit_hip_opt_in(self) -> None:
+        root = Path(__file__).resolve().parents[4]
+        cmake = (
+            root / "internal/core/thirdparty/knowhere/CMakeLists.txt"
+        ).read_text()
+
+        self.assertNotIn('set(WITH_HIP ON CACHE BOOL "" FORCE', cmake)
+        self.assertIn("DEFINED MILVUS_WITH_HIP", cmake)
+        self.assertIn("MILVUS GPU: WITH_CUVS=ON WITH_HIP=OFF (CUDA)", cmake)
 
     def test_insecure_cached_conan_source_is_rewritten(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

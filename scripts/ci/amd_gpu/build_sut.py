@@ -221,6 +221,8 @@ def build_amd(root: Path) -> dict[str, Any]:
             "LD_LIBRARY_PATH": ":".join(library_parts),
             "MILVUS_HIP_INSTALL_PREFIX": str(hip_prefix),
             "ROCMDS_INSTALL_PREFIX": str(hip_prefix),
+            "MILVUS_WITH_HIP": "1",
+            "KNOWHERE_WITH_HIP": "1",
             "ROCM_PATH": os.environ.get("ROCM_PATH", "/opt/rocm"),
             "HIP_PATH": os.environ.get("HIP_PATH", "/opt/rocm"),
             "ENABLE_AZURE": "false",
@@ -232,6 +234,7 @@ def build_amd(root: Path) -> dict[str, Any]:
             ),
             "CMAKE_EXTRA_ARGS": (
                 f"-DMILVUS_KNOWHERE_SOURCE_DIR={knowhere_source} "
+                "-DMILVUS_WITH_HIP=ON -DWITH_HIP=ON -DWITH_CUVS=ON "
                 f"-DxxHash_DIR={xxhash_dir}"
             ),
         }
@@ -356,8 +359,13 @@ def nvidia_compose_build_command(
                 "--env",
                 (
                     "CMAKE_EXTRA_ARGS="
-                    "-DMILVUS_KNOWHERE_SOURCE_DIR=/opt/milvus-ci/knowhere"
+                    "-DMILVUS_KNOWHERE_SOURCE_DIR=/opt/milvus-ci/knowhere "
+                    "-DMILVUS_WITH_HIP=OFF -DWITH_HIP=OFF -DWITH_CUVS=ON"
                 ),
+                "--env",
+                "MILVUS_WITH_HIP=0",
+                "--env",
+                "KNOWHERE_WITH_HIP=0",
             ]
         )
     command.extend(["gpubuilder", "make", "milvus-gpu"])

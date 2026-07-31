@@ -63,8 +63,8 @@ jobs:
     timeout-minutes: 360
     env:
       GPU_HIP_PREFIX: /home/amd/rocmds_check_gfx1100/install
-      GPU_KNOWHERE_SOURCE_DIR: /home/amd/rocmds_check_gfx1100/knowhere
-      GPU_KNOWHERE_COMMIT: 0ed6f5a3cb50641e85af7e27c45b9d479b3e717b
+      GPU_KNOWHERE_SOURCE_DIR: /home/amd/milvus-ci/knowhere
+      GPU_KNOWHERE_COMMIT: 78626c87cd2605f0532783848288d2142ab3ab1f
       GPU_LIBCUVS_SHA256: da850f87c32276d322612febf928553d2fb04d2b57d5400739c9da9f7506d5fc
       MILVUS_GIST_DATASET: /home/amd/milvus-ci/data/gist-960-euclidean.hdf5
       MILVUS_CI_ROOT: ${{ github.workspace }}
@@ -124,6 +124,8 @@ jobs:
             --backend amd \
             --output gpu-evidence/build-amd.json \
             |& tee gpu-evidence/build-amd.log
+          grep -F "MILVUS Layer3 HIP: WITH_CUVS=ON WITH_HIP=ON" \
+            gpu-evidence/build-amd.log
 
       - name: hipVS shared C API gtests
         id: gtests
@@ -294,7 +296,7 @@ jobs:
     env:
       GPU_BUILD_CACHE_ROOT: /home/kvkol/milvus-ci/build-cache
       GPU_KNOWHERE_SOURCE_DIR: /home/kvkol/milvus-ci/knowhere
-      GPU_KNOWHERE_COMMIT: 0ed6f5a3cb50641e85af7e27c45b9d479b3e717b
+      GPU_KNOWHERE_COMMIT: 78626c87cd2605f0532783848288d2142ab3ab1f
       MILVUS_GIST_DATASET: /home/kvkol/milvus-ci/data/gist-960-euclidean.hdf5
       MILVUS_CI_IMAGE: milvus-ci-nvidia:${{ github.sha }}
       MILVUS_CI_CONTAINER: milvus-ci-${{ github.run_id }}-${{ github.run_attempt }}-nvidia
@@ -354,6 +356,10 @@ jobs:
             --backend nvidia \
             --output gpu-evidence/build-nvidia.json \
             |& tee gpu-evidence/build-nvidia.log
+          grep -F "MILVUS GPU: WITH_CUVS=ON WITH_HIP=OFF (CUDA)" \
+            gpu-evidence/build-nvidia.log
+          ! grep -F "WITH_HIP: set ROCM_PATH or install ROCm" \
+            gpu-evidence/build-nvidia.log
 
       - name: cuVS shared C API gtests
         id: gtests
