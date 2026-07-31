@@ -14,6 +14,7 @@ from scripts.ci.amd_gpu.build_sut import (
     nvidia_compose_build_command,
     package_libraries,
     prepare_nvidia_cache,
+    prepare_nvidia_cmake,
     prepare_nvidia_go_toolchain,
     secure_cached_conan_sources,
     verify_artifact,
@@ -122,6 +123,7 @@ class BuildInputTest(unittest.TestCase):
             self.assertEqual(
                 {
                     "ubuntu22.04-ccache",
+                    "ubuntu22.04-cmake-3.30.4",
                     "ubuntu22.04-conan",
                     "ubuntu22.04-go-mod",
                     "ubuntu22.04-go-sumdb",
@@ -186,18 +188,54 @@ class BuildInputTest(unittest.TestCase):
         self.assertIn("/cache/sumdb:/go/pkg/sumdb", command)
         self.assertEqual("go1.22.0", result["version"])
 
+    def test_nvidia_cmake_is_pinned_and_verified_in_builder(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as temporary,
+            mock.patch("scripts.ci.amd_gpu.build_sut.os.getuid", return_value=1001),
+            mock.patch("scripts.ci.amd_gpu.build_sut.os.getgid", return_value=1002),
+            mock.patch("scripts.ci.amd_gpu.build_sut.run_live") as run_live,
+            mock.patch(
+                "scripts.ci.amd_gpu.build_sut.run_command",
+                return_value={
+                    "returncode": 0,
+                    "stdout": "cmake version 3.30.4\n",
+                    "stderr": "",
+                },
+            ) as run_command,
+        ):
+            install_root = Path(temporary) / "cmake"
+            result = prepare_nvidia_cmake(
+                Path("/source"),
+                "builder:tag",
+                install_root,
+            )
+
+        install_command = run_live.call_args.args[0]
+        verify_command = run_command.call_args.args[0]
+        self.assertIn("cmake==3.30.4", install_command)
+        self.assertIn(f"{install_root}:/tmp/.local", install_command)
+        self.assertIn("/tmp/.local/bin/cmake", verify_command)
+        self.assertEqual("cmake version 3.30.4", result["reported"])
+
     def test_nvidia_build_reuses_preseeded_sumdb(self) -> None:
         with (
             mock.patch("scripts.ci.amd_gpu.build_sut.os.getuid", return_value=1001),
             mock.patch("scripts.ci.amd_gpu.build_sut.os.getgid", return_value=1002),
         ):
-            command = nvidia_compose_build_command(Path("/cache/sumdb"))
+            command = nvidia_compose_build_command(
+                Path("/cache/sumdb"),
+                Path("/cache/cmake"),
+            )
 
         self.assertIn("1001:1002", command)
         self.assertIn("/cache/sumdb:/go/pkg/sumdb", command)
         self.assertIn("HOME=/tmp", command)
         self.assertIn("ENABLE_AZURE=false", command)
         self.assertIn("GOTOOLCHAIN=go1.22.0", command)
+        self.assertIn("/cache/cmake:/tmp/.local:ro", command)
+        self.assertTrue(
+            any(value.startswith("PATH=/tmp/.local/bin:") for value in command)
+        )
         self.assertEqual(["gpubuilder", "make", "milvus-gpu"], command[-3:])
 
     def test_nvidia_build_mounts_pinned_knowhere_source(self) -> None:
@@ -207,6 +245,7 @@ class BuildInputTest(unittest.TestCase):
         ):
             command = nvidia_compose_build_command(
                 Path("/cache/sumdb"),
+                Path("/cache/cmake"),
                 Path("/ci/knowhere"),
             )
 

@@ -274,6 +274,7 @@ def prepare_nvidia_cache(cache_root: Path, os_name: str) -> dict[str, Any]:
     directories = []
     for suffix in (
         "ccache",
+        "cmake-3.30.4",
         "go-mod",
         "go-sumdb",
         "vscode-extensions",
@@ -286,6 +287,56 @@ def prepare_nvidia_cache(cache_root: Path, os_name: str) -> dict[str, Any]:
     return {
         "root": str(cache_root),
         "directories": directories,
+    }
+
+
+def prepare_nvidia_cmake(
+    root: Path,
+    builder_image: str,
+    install_root: Path,
+    version: str = "3.30.4",
+) -> dict[str, Any]:
+    user = f"{os.getuid()}:{os.getgid()}"
+    install_root.mkdir(parents=True, exist_ok=True)
+    install_root.chmod(0o777)
+    common = [
+        "docker",
+        "run",
+        "--rm",
+        "--user",
+        user,
+        "--env",
+        "HOME=/tmp",
+        "--volume",
+        f"{install_root}:/tmp/.local",
+        builder_image,
+    ]
+    run_live(
+        [
+            *common,
+            "python3",
+            "-m",
+            "pip",
+            "install",
+            "--user",
+            "--disable-pip-version-check",
+            "--no-warn-script-location",
+            f"cmake=={version}",
+        ],
+        cwd=root,
+    )
+    result = run_command([*common, "/tmp/.local/bin/cmake", "--version"])
+    expected = f"cmake version {version}"
+    if result["returncode"] != 0 or expected not in result["stdout"].splitlines():
+        raise BuildError(
+            f"NVIDIA builder CMake verification failed: expected {expected}, "
+            f"got {result['stdout'] or result['stderr']}"
+        )
+    return {
+        "version": version,
+        "reported": expected,
+        "user": user,
+        "install_root": str(install_root),
     }
 
 
@@ -330,6 +381,7 @@ def prepare_nvidia_go_toolchain(
 
 def nvidia_compose_build_command(
     sumdb_cache: Path,
+    cmake_root: Path,
     knowhere_source: Path | None = None,
     version: str = "go1.22.0",
 ) -> list[str]:
@@ -344,12 +396,19 @@ def nvidia_compose_build_command(
         user,
         "--volume",
         f"{sumdb_cache}:/go/pkg/sumdb",
+        "--volume",
+        f"{cmake_root}:/tmp/.local:ro",
         "--env",
         "HOME=/tmp",
         "--env",
         "ENABLE_AZURE=false",
         "--env",
         f"GOTOOLCHAIN={version}",
+        "--env",
+        (
+            "PATH=/tmp/.local/bin:/usr/local/cuda/bin:/usr/local/sbin:"
+            "/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        ),
     ]
     if knowhere_source is not None:
         command.extend(
@@ -491,6 +550,11 @@ def build_nvidia(root: Path, source_commit: str) -> dict[str, Any]:
     stale_state["conan_source_overrides"] = secure_cached_conan_sources(
         cache_root / "ubuntu22.04-conan"
     )
+    cmake = prepare_nvidia_cmake(
+        root,
+        builder_image,
+        cache_root / "ubuntu22.04-cmake-3.30.4",
+    )
     go_toolchain = prepare_nvidia_go_toolchain(
         root,
         builder_image,
@@ -521,6 +585,7 @@ def build_nvidia(root: Path, source_commit: str) -> dict[str, Any]:
     run_live_with_retry(
         nvidia_compose_build_command(
             cache_root / "ubuntu22.04-go-sumdb",
+            cache_root / "ubuntu22.04-cmake-3.30.4",
             knowhere_source,
         ),
         cwd=root,
@@ -561,6 +626,7 @@ def build_nvidia(root: Path, source_commit: str) -> dict[str, Any]:
     return {
         "builder": builder,
         "cache": cache,
+        "cmake": cmake,
         "knowhere": knowhere,
         "go_toolchain": go_toolchain,
         "stale_state": stale_state,
