@@ -64,6 +64,12 @@ def compare_benchmarks(
         amd_recall = float(amd_row["recall@10"])
         nvidia_recall = float(nvidia_row["recall@10"])
         recall_delta = amd_recall - nvidia_recall
+        recall_pass = abs(recall_delta) <= recall_tolerance or math.isclose(
+            abs(recall_delta),
+            recall_tolerance,
+            rel_tol=0.0,
+            abs_tol=1e-12,
+        )
         nvidia_qps = float(nvidia_row["qps"])
         rows.append(
             {
@@ -83,7 +89,7 @@ def compare_benchmarks(
                     ),
                 },
                 "recall_delta": recall_delta,
-                "recall_pass": abs(recall_delta) <= recall_tolerance,
+                "recall_pass": recall_pass,
                 "correctness_gate_applied": nprobe not in excluded_nprobes,
                 "qps_ratio_amd_to_nvidia": (
                     float(amd_row["qps"]) / nvidia_qps if nvidia_qps else None

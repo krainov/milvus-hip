@@ -41,6 +41,13 @@ class BenchmarkComparisonTest(unittest.TestCase):
         self.assertEqual("fail", result["status"])
         self.assertEqual([4], result["correctness_gate"]["failed_nprobes"])
 
+    def test_recall_exactly_at_tolerance_passes(self) -> None:
+        self.amd["nprobe_results"][1]["recall@10"] = 0.8359
+        self.nvidia["nprobe_results"][1]["recall@10"] = 0.8309
+        result = compare_benchmarks(self.amd, self.nvidia, 0.005)
+        self.assertEqual("pass", result["status"])
+        self.assertTrue(result["rows"][1]["recall_pass"])
+
     def test_failed_source_provenance_fails(self) -> None:
         self.amd["status"] = "fail"
         result = compare_benchmarks(self.amd, self.nvidia, 0.005)
