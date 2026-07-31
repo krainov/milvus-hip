@@ -266,8 +266,16 @@ class BuildInputTest(unittest.TestCase):
             mock.patch(
                 "scripts.ci.amd_gpu.build_sut.run_command",
                 side_effect=[
-                    {"returncode": 0, "stdout": "cargo 1.73.0 (test)", "stderr": ""},
-                    {"returncode": 0, "stdout": "rustc 1.73.0 (test)", "stderr": ""},
+                    {
+                        "returncode": 0,
+                        "stdout": "CUDA banner\ncargo 1.73.0 (test)",
+                        "stderr": "",
+                    },
+                    {
+                        "returncode": 0,
+                        "stdout": "CUDA banner\nrustc 1.73.0 (test)",
+                        "stderr": "",
+                    },
                 ],
             ),
         ):

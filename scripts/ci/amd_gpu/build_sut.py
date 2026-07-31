@@ -499,19 +499,35 @@ def prepare_nvidia_rust_toolchain(
     ]
     cargo = run_command([*common, "cargo", "--version"])
     rustc = run_command([*common, "rustc", "--version"])
-    if cargo["returncode"] != 0 or not cargo["stdout"].startswith("cargo 1.73.0 "):
+    cargo_version = next(
+        (
+            line
+            for line in cargo["stdout"].splitlines()
+            if line.startswith("cargo 1.73.0 ")
+        ),
+        "",
+    )
+    rustc_version = next(
+        (
+            line
+            for line in rustc["stdout"].splitlines()
+            if line.startswith("rustc 1.73.0 ")
+        ),
+        "",
+    )
+    if cargo["returncode"] != 0 or not cargo_version:
         raise BuildError(
             "NVIDIA builder Cargo verification failed: "
             f"{cargo['stdout'] or cargo['stderr']}"
         )
-    if rustc["returncode"] != 0 or not rustc["stdout"].startswith("rustc 1.73.0 "):
+    if rustc["returncode"] != 0 or not rustc_version:
         raise BuildError(
             "NVIDIA builder rustc verification failed: "
             f"{rustc['stdout'] or rustc['stderr']}"
         )
     return {
-        "cargo": cargo["stdout"],
-        "rustc": rustc["stdout"],
+        "cargo": cargo_version,
+        "rustc": rustc_version,
         "user": user,
         "install_root": str(install_root),
         "builder_digest": builder_digest,
