@@ -312,9 +312,10 @@ class BuildInputTest(unittest.TestCase):
         self.assertIn("GOTOOLCHAIN=go1.22.0", command)
         self.assertIn("/cache/cmake:/tmp/.local:ro", command)
         self.assertIn("/cache/xxhash:/opt/milvus-ci/xxhash:ro", command)
-        self.assertIn("/cache/rust:/opt/milvus-ci/rust", command)
-        self.assertIn("CARGO_HOME=/opt/milvus-ci/rust/cargo", command)
-        self.assertIn("RUSTUP_HOME=/opt/milvus-ci/rust/rustup", command)
+        self.assertIn("/cache/rust/cargo:/tmp/.cargo", command)
+        self.assertIn("/cache/rust/rustup:/tmp/.rustup:ro", command)
+        self.assertIn("CARGO_HOME=/tmp/.cargo", command)
+        self.assertIn("RUSTUP_HOME=/tmp/.rustup", command)
         self.assertTrue(
             any(value.startswith("PATH=/tmp/.local/bin:") for value in command)
         )

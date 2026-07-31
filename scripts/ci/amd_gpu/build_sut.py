@@ -485,16 +485,18 @@ def prepare_nvidia_rust_toolchain(
         "--env",
         "HOME=/tmp",
         "--env",
-        "CARGO_HOME=/opt/milvus-ci/rust/cargo",
+        "CARGO_HOME=/tmp/.cargo",
         "--env",
-        "RUSTUP_HOME=/opt/milvus-ci/rust/rustup",
+        "RUSTUP_HOME=/tmp/.rustup",
         "--env",
         (
-            "PATH=/opt/milvus-ci/rust/cargo/bin:/usr/local/bin:"
+            "PATH=/tmp/.cargo/bin:/usr/local/bin:"
             "/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin"
         ),
         "--volume",
-        f"{install_root}:/opt/milvus-ci/rust",
+        f"{cargo_root}:/tmp/.cargo",
+        "--volume",
+        f"{rustup_root}:/tmp/.rustup:ro",
         builder_image,
     ]
     cargo = run_command([*common, "cargo", "--version"])
@@ -597,20 +599,22 @@ def nvidia_compose_build_command(
         "--volume",
         f"{xxhash_root}:/opt/milvus-ci/xxhash:ro",
         "--volume",
-        f"{rust_root}:/opt/milvus-ci/rust",
+        f"{rust_root / 'cargo'}:/tmp/.cargo",
+        "--volume",
+        f"{rust_root / 'rustup'}:/tmp/.rustup:ro",
         "--env",
         "HOME=/tmp",
         "--env",
-        "CARGO_HOME=/opt/milvus-ci/rust/cargo",
+        "CARGO_HOME=/tmp/.cargo",
         "--env",
-        "RUSTUP_HOME=/opt/milvus-ci/rust/rustup",
+        "RUSTUP_HOME=/tmp/.rustup",
         "--env",
         "ENABLE_AZURE=false",
         "--env",
         f"GOTOOLCHAIN={version}",
         "--env",
         (
-            "PATH=/tmp/.local/bin:/opt/milvus-ci/rust/cargo/bin:/usr/local/bin:"
+            "PATH=/tmp/.local/bin:/tmp/.cargo/bin:/usr/local/bin:"
             "/usr/local/go/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:"
             "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
         ),
