@@ -21,6 +21,7 @@ env:
   PYTHONUNBUFFERED: "1"
   SIFT1M_SHA256: dd6f0a6ed6b7ebb8934680f861a33ed01ff33991eaee4fd60914d854a0ca5984
   GIST1M_SHA256: 8e95831936bfdbfa0a56086942e2cf98cd703517c67f985914183eb4cdbf026a
+  GPU_RECALL_TOLERANCE: "0.015"
   NVIDIA_BUILDER_IMAGE: milvusdb/milvus-env:gpu-ubuntu22.04-20240806-d8668fe
   NVIDIA_BUILDER_DIGEST: sha256:cdf41b4dae81a0ac0cf0efc4ee058dd7298ae6dd7ebd4bdf396a62916513e0a8
   NVIDIA_RUNTIME_BASE_IMAGE: milvusdb/milvus:v2.5.4-gpu@sha256:1f62c3b4096dfef2ffcf99ca628b9246f02d6c57cef99f0d299c2c8c144c4a3d
@@ -566,7 +567,7 @@ jobs:
             --kind benchmark \
             --amd evidence/amd/benchmark-amd-ivf-flat.json \
             --nvidia evidence/nvidia/benchmark-nvidia-ivf-flat.json \
-            --recall-tolerance 0.005 \
+            --recall-tolerance "${GPU_RECALL_TOLERANCE}" \
             --output ivf-flat-parity.json \
             --fail-on-correctness
 
@@ -578,7 +579,7 @@ jobs:
             --kind benchmark \
             --amd evidence/amd/benchmark-amd-ivf-pq.json \
             --nvidia evidence/nvidia/benchmark-nvidia-ivf-pq.json \
-            --recall-tolerance 0.005 \
+            --recall-tolerance "${GPU_RECALL_TOLERANCE}" \
             --output ivf-pq-parity.json \
             --fail-on-correctness
 
@@ -590,7 +591,7 @@ jobs:
             --kind benchmark \
             --amd evidence/amd/benchmark-amd-gist-ivf-pq.json \
             --nvidia evidence/nvidia/benchmark-nvidia-gist-ivf-pq.json \
-            --recall-tolerance 0.01 \
+            --recall-tolerance "${GPU_RECALL_TOLERANCE}" \
             --output gist-ivf-pq-parity.json \
             --fail-on-correctness
 

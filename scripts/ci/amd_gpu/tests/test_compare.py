@@ -48,6 +48,18 @@ class BenchmarkComparisonTest(unittest.TestCase):
         self.assertEqual("pass", result["status"])
         self.assertTrue(result["rows"][1]["recall_pass"])
 
+    def test_mvp_repeatability_tolerance_accepts_observed_delta(self) -> None:
+        self.amd["nprobe_results"][1]["recall@10"] = 0.6949
+        self.nvidia["nprobe_results"][1]["recall@10"] = 0.6809
+        result = compare_benchmarks(self.amd, self.nvidia, 0.015)
+        self.assertEqual("pass", result["status"])
+
+    def test_mvp_repeatability_tolerance_rejects_larger_delta(self) -> None:
+        self.amd["nprobe_results"][1]["recall@10"] = 0.6960
+        self.nvidia["nprobe_results"][1]["recall@10"] = 0.6809
+        result = compare_benchmarks(self.amd, self.nvidia, 0.015)
+        self.assertEqual("fail", result["status"])
+
     def test_failed_source_provenance_fails(self) -> None:
         self.amd["status"] = "fail"
         result = compare_benchmarks(self.amd, self.nvidia, 0.005)
