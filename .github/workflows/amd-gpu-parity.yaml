@@ -75,7 +75,7 @@ jobs:
       GPU_LIBRARY_COMMIT: 87877f15fe6fdd6525730385e9474117ade6ecb3
       GPU_KNOWHERE_SOURCE_DIR: /home/amd/milvus-ci/knowhere
       GPU_KNOWHERE_COMMIT: 78626c87cd2605f0532783848288d2142ab3ab1f
-      GPU_LIBCUVS_SHA256: da850f87c32276d322612febf928553d2fb04d2b57d5400739c9da9f7506d5fc
+      GPU_LIBCUVS_SHA256: 3fab5ceb25e6c158f31c3bd3968a512da23e8035f17e4a722a0652d1010b640d
       MILVUS_GIST_DATASET: /home/amd/milvus-ci/data/gist-960-euclidean.hdf5
       MILVUS_CI_ROOT: ${{ github.workspace }}
       MILVUS_CI_BINARY: ${{ github.workspace }}/bin/milvus
