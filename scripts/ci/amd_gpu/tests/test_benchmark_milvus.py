@@ -60,6 +60,22 @@ class BenchmarkRunsTest(unittest.TestCase):
         self.assertIn("inputs.gist_runs || '1'", workflow)
         self.assertEqual(2, workflow.count('--runs "${GIST_BENCHMARK_RUNS}"'))
 
+    def test_amd_gtests_use_a_pinned_ci_owned_checkout(self) -> None:
+        workflow = (
+            REPOSITORY_ROOT / ".github/workflows/amd-gpu-parity.yaml"
+        ).read_text()
+        self.assertIn(
+            "GPU_GTEST_DIR: /home/amd/milvus-ci/hipVS/cpp/build/gtests",
+            workflow,
+        )
+        self.assertIn(
+            "GPU_LIBRARY_SOURCE_DIR: /home/amd/milvus-ci/hipVS", workflow
+        )
+        self.assertIn("GPU_LIBRARY_COMMIT:", workflow)
+        self.assertIn(
+            'git -C "${GPU_LIBRARY_SOURCE_DIR}" diff --quiet HEAD --', workflow
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

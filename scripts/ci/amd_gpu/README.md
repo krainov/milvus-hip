@@ -75,6 +75,10 @@ Both runners provide these non-secret values in their runner `.env` file:
 - `MILVUS_GIST_DATASET`
 - `MILVUS_CI_DEPENDENCY_CONTAINERS`
 
+AMD gtests are built in the CI-owned `/home/amd/milvus-ci/hipVS` checkout. The
+workflow pins its source commit and rejects tracked changes before execution;
+it must never use a developer checkout or build directory.
+
 NVIDIA gtests can run in a CUDA build container by also setting:
 
 - `GPU_GTEST_CONTAINER_IMAGE`

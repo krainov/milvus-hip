@@ -70,6 +70,9 @@ jobs:
     timeout-minutes: 360
     env:
       GPU_HIP_PREFIX: /home/amd/rocmds_check_gfx1100/install
+      GPU_GTEST_DIR: /home/amd/milvus-ci/hipVS/cpp/build/gtests
+      GPU_LIBRARY_SOURCE_DIR: /home/amd/milvus-ci/hipVS
+      GPU_LIBRARY_COMMIT: 87877f15fe6fdd6525730385e9474117ade6ecb3
       GPU_KNOWHERE_SOURCE_DIR: /home/amd/milvus-ci/knowhere
       GPU_KNOWHERE_COMMIT: 78626c87cd2605f0532783848288d2142ab3ab1f
       GPU_LIBCUVS_SHA256: da850f87c32276d322612febf928553d2fb04d2b57d5400739c9da9f7506d5fc
@@ -146,13 +149,17 @@ jobs:
               --blocked-reason "runner doctor failed; GPU tests were not executed" \
               --output gpu-evidence/gtest-amd.json \
               |& tee gpu-evidence/gtest-amd.log
+          else
+            test "$(git -C "${GPU_LIBRARY_SOURCE_DIR}" rev-parse HEAD)" = \
+              "${GPU_LIBRARY_COMMIT}"
+            git -C "${GPU_LIBRARY_SOURCE_DIR}" diff --quiet HEAD --
+            python3 scripts/ci/amd_gpu/run_gtests.py \
+              --backend amd \
+              --gtest-dir "${GPU_GTEST_DIR}" \
+              --non-gating-binary CAGRA_C_TEST \
+              --output gpu-evidence/gtest-amd.json \
+              |& tee gpu-evidence/gtest-amd.log
           fi
-          python3 scripts/ci/amd_gpu/run_gtests.py \
-            --backend amd \
-            --gtest-dir "${GPU_GTEST_DIR}" \
-            --non-gating-binary CAGRA_C_TEST \
-            --output gpu-evidence/gtest-amd.json \
-            |& tee gpu-evidence/gtest-amd.log
 
       - name: Start AMD Milvus
         id: start_milvus
@@ -383,13 +390,14 @@ jobs:
               --blocked-reason "runner doctor failed; GPU tests were not executed" \
               --output gpu-evidence/gtest-nvidia.json \
               |& tee gpu-evidence/gtest-nvidia.log
+          else
+            python3 scripts/ci/amd_gpu/run_gtests.py \
+              --backend nvidia \
+              --gtest-dir "${GPU_GTEST_DIR}" \
+              --non-gating-binary CAGRA_C_TEST \
+              --output gpu-evidence/gtest-nvidia.json \
+              |& tee gpu-evidence/gtest-nvidia.log
           fi
-          python3 scripts/ci/amd_gpu/run_gtests.py \
-            --backend nvidia \
-            --gtest-dir "${GPU_GTEST_DIR}" \
-            --non-gating-binary CAGRA_C_TEST \
-            --output gpu-evidence/gtest-nvidia.json \
-            |& tee gpu-evidence/gtest-nvidia.log
 
       - name: Start NVIDIA Milvus
         id: start_milvus
