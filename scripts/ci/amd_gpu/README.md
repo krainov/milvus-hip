@@ -38,6 +38,9 @@ the median of those 1,000 samples, while `qps_samples`, `runs`, and
 `qps_aggregation` retain the aggregation provenance. This repeats searches
 against one index build; it does not claim index-build repeatability. A manual
 1000-run check can be started with the same `gist_runs` workflow input.
+The nightly verdict gates runner/build/source health, shared C API tests, and
+GIST parity. The one-sweep SIFT comparisons remain visible as evidence but are
+non-gating in this mode; ordinary pull request runs continue to gate on them.
 
 The benchmark inserts deterministic row IDs before comparing search results to
 the exact-KNN neighbors in the dataset. It rejects a stale server even if that

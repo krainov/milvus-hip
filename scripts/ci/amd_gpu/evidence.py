@@ -22,13 +22,15 @@ def markdown_for(manifest: dict[str, Any]) -> str:
         "",
         "## Evidence",
         "",
-        "| Name | Schema | Status | SHA256 |",
-        "|---|---|---|---|",
+        "| Name | Schema | Status | Gate | SHA256 |",
+        "|---|---|---|---|---|",
     ]
     for item in manifest["evidence"]:
         lines.append(
             f"| {item['name']} | {item.get('schema', '')} | "
-            f"{item.get('status', '')} | `{item['sha256']}` |"
+            f"{item.get('status', '')} | "
+            f"{'required' if item.get('gating', True) else 'evidence only'} | "
+            f"`{item['sha256']}` |"
         )
     lines.extend(
         [
@@ -45,18 +47,34 @@ def main() -> int:
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--commit")
     parser.add_argument("--input", action="append", default=[], metavar="NAME=PATH")
+    parser.add_argument(
+        "--non-gating",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="Keep an input in the pack without using its status in the verdict",
+    )
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     evidence = []
+    non_gating = set(args.non_gating)
+    input_names = {entry.split("=", 1)[0] for entry in args.input}
+    unknown_non_gating = sorted(non_gating - input_names)
+    if unknown_non_gating:
+        parser.error(
+            "--non-gating names are not present in --input: "
+            + ", ".join(unknown_non_gating)
+        )
     verdict = "pass"
     for entry in args.input:
         name, raw_path = entry.split("=", 1)
         path = Path(raw_path)
         payload = read_json(path)
         item_status = payload.get("status")
-        if item_status == "fail":
+        gating = name not in non_gating
+        if item_status == "fail" and gating:
             verdict = "fail"
         destination = args.output_dir / path.name
         if path.resolve() != destination.resolve():
@@ -68,6 +86,7 @@ def main() -> int:
                 "sha256": sha256(destination),
                 "schema": payload.get("schema"),
                 "status": item_status,
+                "gating": gating,
             }
         )
 
@@ -77,6 +96,7 @@ def main() -> int:
         "run_id": args.run_id,
         "commit": args.commit,
         "verdict": verdict,
+        "non_gating_evidence": sorted(non_gating),
         "evidence": evidence,
     }
     write_json(args.output_dir / "manifest.json", manifest)
