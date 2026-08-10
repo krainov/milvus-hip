@@ -40,9 +40,8 @@ same protocol on both sides (do not mix):
 | Batched harness (one `search()` with 10k queries) | GPU HIP ~**5–7×** CPU; recall@10 matches (~0.93–0.98) |
 | VectorDBBench concurrent | GPU HIP ~**2–4×** CPU; GPU holds ~11k QPS as `nprobe` rises |
 
-Plus engineering proof: sealed `GPU_CUVS_IVF_FLAT` build/load/search on
-`gfx1100`, including fixes that stock “it should work” paths did not give us
-out of the box (e.g. hipVS IVF packer on RDNA3).
+Plus engineering proof: sealed `GPU_CUVS_IVF_FLAT` / `GPU_IVF_PQ` build/load/search
+on `gfx1100`, and **unfiltered** `GPU_CAGRA` (see [GPU indexes on gfx1100](#gpu-indexes-on-gfx1100-what-works) below).
 
 ### Business value by stakeholder
 
@@ -59,6 +58,8 @@ out of the box (e.g. hipVS IVF packer on RDNA3).
 - Not “we will conquer AMD” by restating that Instinct support is desired.
 - Not a public GitHub dump without a clear why — the why is the gap above
   and the measured HIP port.
+- Not a claim that every Milvus GPU feature (including filtered CAGRA) is
+  production-ready on consumer RDNA3 — see restrictions below.
 
 ### Public release intent
 
@@ -66,6 +67,61 @@ Publish when the story is: **problem → HIP solution on consumer AMD →
 measured speed-up / recall → how to reproduce → path to Instinct.**
 Feedback from GitHub then validates demand; it does not replace stating
 business value first.
+
+---
+
+## GPU indexes on gfx1100: what works
+
+| Index | Status on RX 7900 XTX (this port) | Notes |
+|-------|-----------------------------------|--------|
+| `GPU_IVF_FLAT` | **Supported** | Sealed path proven; Layer-4 SIFT recall OK |
+| `GPU_IVF_PQ` | **Supported** | Same; use for lower memory / high QPS recipes |
+| `GPU_CAGRA` | **Supported for unfiltered search only** | Same scope as AMD Instinct CAGRA demos (no bitset). See usage below. |
+
+### CAGRA — use only without filtering
+
+**Plain English:** CAGRA can search the whole index. It must **not** be used when
+some rows must be skipped (deletes, TTL, ACL, scalar / predicate filters).
+That “skip some IDs” path is called **filtering** (GPU bitset). On gfx1100 it
+is **broken** today (wrong or empty neighbor IDs). AMD’s public CAGRA demos
+also show only the unfiltered case.
+
+| Do | Do not |
+|----|--------|
+| Create `GPU_CAGRA`, load, search with **no** filter expression | Rely on delete / TTL while the CAGRA index is loaded |
+| Keep a stable collection (no soft-deletes during search) | Expect metadata / bitset filtering to return correct IDs |
+| Prefer IVF indexes if you need deletes or filtered search | Treat CAGRA as “full Milvus feature parity” on this GPU |
+
+#### How to create CAGRA (unfiltered)
+
+Use index type `GPU_CAGRA`. On this GPU, set the graph-build mode that works
+here (parameter name in Milvus/Knowhere: `build_algo` = `NN_DESCENT`). Other
+build modes may fail on gfx1100.
+
+Example (pymilvus-style params; adjust names to your client API):
+
+```python
+index_params = {
+    "index_type": "GPU_CAGRA",
+    "metric_type": "L2",  # or COSINE / IP as appropriate
+    "params": {
+        "graph_degree": 32,
+        "intermediate_graph_degree": 64,
+        "build_algo": "NN_DESCENT",  # required on gfx1100 for a working build
+    },
+}
+# Search: plain vector search only — no filter / expr / bitset.
+# Avoid delete() / TTL on this collection while validating CAGRA.
+```
+
+Smoke / Layer-4 helpers in the harness:
+
+- `scripts/run_milvus_gpu_cagra_smoke.sh`
+- `scripts/run_milvus_layer4_cagra.sh`
+- Details: <https://github.com/konkolchin/ann-harness-amd> → `docs/cagra_consumer_followon.md`
+
+Confirm the sealed GPU path in Milvus logs (`GPU_CUVS_CAGRA` / CAGRA), not a
+CPU fallback.
 
 ---
 
@@ -118,8 +174,10 @@ Useful entry points (see `docs/` and `scripts/` for details):
 - `scripts/build_milvus_layer3.sh` — HIP Milvus build against Knowhere/hipVS
 - `scripts/run_milvus_gpu_smoke.sh` — sealed `GPU_IVF_FLAT` smoke (`--flush`)
 - `scripts/run_milvus_layer4.sh` — full SIFT-1M nprobe grid (HIP GPU)
+- `scripts/run_milvus_gpu_cagra_smoke.sh` — sealed unfiltered `GPU_CAGRA` smoke
 - `docs/layer4_run_checklist.md`
 - `docs/porting_milvus_gpu_to_amd.tex` — measured HIP vs CPU tables
+- `docs/cagra_consumer_followon.md` — CAGRA Phase A/B on gfx1100
 
 ## Runtime notes (AMD GPU host)
 
@@ -145,5 +203,6 @@ Useful entry points (see `docs/` and `scripts/` for details):
    pattern) on both sides so QPS/recall are comparable.
 4. Report recall@10 and QPS/p99 per nprobe; confirm sealed GPU path in logs
    (`GPU_CUVS_IVF_FLAT` / CUDA cuVS equivalents), not growing-path CPU IVF.
+5. For CAGRA compares: unfiltered only on AMD; do not claim filter parity.
 
 Contact / lab reference host: `amd-rx7900xtx` (RX 7900 XTX, gfx1100).
