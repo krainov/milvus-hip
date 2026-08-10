@@ -8,6 +8,11 @@ on:
     branches:
       - v2.5.4
   workflow_dispatch:
+    inputs:
+      gist_runs:
+        description: Complete GIST query sweeps per nprobe
+        required: false
+        default: "1"
 
 concurrency:
   group: amd-gpu-parity-${{ github.event.pull_request.number || github.ref }}
@@ -21,6 +26,7 @@ env:
   PYTHONUNBUFFERED: "1"
   SIFT1M_SHA256: dd6f0a6ed6b7ebb8934680f861a33ed01ff33991eaee4fd60914d854a0ca5984
   GIST1M_SHA256: 8e95831936bfdbfa0a56086942e2cf98cd703517c67f985914183eb4cdbf026a
+  GIST_BENCHMARK_RUNS: ${{ github.event_name == 'workflow_dispatch' && inputs.gist_runs || '1' }}
   GPU_RECALL_TOLERANCE: "0.015"
   NVIDIA_BUILDER_IMAGE: milvusdb/milvus-env:gpu-ubuntu22.04-20240806-d8668fe
   NVIDIA_BUILDER_DIGEST: sha256:cdf41b4dae81a0ac0cf0efc4ee058dd7298ae6dd7ebd4bdf396a62916513e0a8
@@ -222,6 +228,7 @@ jobs:
             --nprobe 128 \
             --insert-batch 8000 \
             --max-query-rows 1000 \
+            --runs "${GIST_BENCHMARK_RUNS}" \
             --require-source-match \
             --output gpu-evidence/benchmark-amd-gist-ivf-pq.json \
             |& tee gpu-evidence/benchmark-amd-gist-ivf-pq.log
@@ -458,6 +465,7 @@ jobs:
             --nprobe 128 \
             --insert-batch 8000 \
             --max-query-rows 1000 \
+            --runs "${GIST_BENCHMARK_RUNS}" \
             --require-source-match \
             --output gpu-evidence/benchmark-nvidia-gist-ivf-pq.json \
             |& tee gpu-evidence/benchmark-nvidia-gist-ivf-pq.log

@@ -13,6 +13,8 @@ class BenchmarkComparisonTest(unittest.TestCase):
             "m": 32,
             "nbits": 8,
             "k": 10,
+            "runs": 1,
+            "qps_aggregation": "median",
             "dataset_sha256": "abc",
         }
         self.amd = {
@@ -65,6 +67,15 @@ class BenchmarkComparisonTest(unittest.TestCase):
         result = compare_benchmarks(self.amd, self.nvidia, 0.005)
         self.assertEqual("fail", result["status"])
         self.assertEqual(["amd"], result["input_failures"])
+
+    def test_mismatched_run_counts_fail(self) -> None:
+        self.amd["runs"] = 1000
+        result = compare_benchmarks(self.amd, self.nvidia, 0.005)
+        self.assertEqual("fail", result["status"])
+        self.assertEqual(
+            {"amd": 1000, "nvidia": 1},
+            result["metadata_mismatches"]["runs"],
+        )
 
     def test_excluded_nprobe_is_reported_but_does_not_fail(self) -> None:
         self.amd["nprobe_results"][0]["recall@10"] = 0.20

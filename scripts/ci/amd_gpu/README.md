@@ -28,6 +28,17 @@ QPS, the AMD/NVIDIA QPS ratio, batch p99, index build time, and sampled peak
 VRAM are evidence, not correctness gates. `nprobe=1` is not executed because it
 is too noisy for this comparison.
 
+## Nightly GIST measurements
+
+Pushes and pull requests run one GIST query sweep per `nprobe`. The nightly
+scheduler on the repository's default branch dispatches this workflow with
+`gist_runs=1000`, because GitHub does not execute `schedule` triggers from the
+`v2.5.4` integration branch. The compatible `qps` value in nightly evidence is
+the median of those 1,000 samples, while `qps_samples`, `runs`, and
+`qps_aggregation` retain the aggregation provenance. This repeats searches
+against one index build; it does not claim index-build repeatability. A manual
+1000-run check can be started with the same `gist_runs` workflow input.
+
 The benchmark inserts deterministic row IDs before comparing search results to
 the exact-KNN neighbors in the dataset. It rejects a stale server even if that
 server produces good benchmark numbers.

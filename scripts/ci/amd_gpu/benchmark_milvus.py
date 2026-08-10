@@ -19,9 +19,25 @@ import numpy as np
 from pymilvus import DataType, MilvusClient
 
 try:
-    from .common import retry_operation, sha256, utc_now, verify_sha256, write_json
+    from .common import (
+        median_measurement,
+        positive_int,
+        retry_operation,
+        sha256,
+        utc_now,
+        verify_sha256,
+        write_json,
+    )
 except ImportError:
-    from common import retry_operation, sha256, utc_now, verify_sha256, write_json
+    from common import (
+        median_measurement,
+        positive_int,
+        retry_operation,
+        sha256,
+        utc_now,
+        verify_sha256,
+        write_json,
+    )
 
 
 TRANSIENT_MILVUS_ERRORS = (
@@ -174,6 +190,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--k", type=int, default=10)
     parser.add_argument("--insert-batch", type=int, default=10_000)
     parser.add_argument("--query-batch", type=int, default=100)
+    parser.add_argument(
+        "--runs",
+        type=positive_int,
+        default=1,
+        help="Number of complete query sweeps per nprobe; QPS is the median",
+    )
     parser.add_argument("--max-train-rows", type=int)
     parser.add_argument("--max-query-rows", type=int)
     parser.add_argument("--keep-collection", action="store_true")
@@ -299,30 +321,40 @@ def benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             )
 
         for nprobe in nprobes:
-            found: list[list[int]] = []
+            qps_samples: list[float] = []
+            recall_samples: list[float] = []
             latencies: list[float] = []
-            started_all = time.perf_counter()
-            for _, batch in batched(queries, args.query_batch):
-                started = time.perf_counter()
-                response = client.search(
-                    collection_name=collection,
-                    data=batch.tolist(),
-                    anns_field="vec",
-                    limit=args.k,
-                    search_params={
-                        "metric_type": "L2",
-                        "params": {"nprobe": nprobe},
-                    },
-                    output_fields=[],
-                )
-                latencies.append((time.perf_counter() - started) * 1000)
-                found.extend(search_ids(response))
-            elapsed = time.perf_counter() - started_all
+            for _ in range(args.runs):
+                found: list[list[int]] = []
+                run_latencies: list[float] = []
+                started_all = time.perf_counter()
+                for _, batch in batched(queries, args.query_batch):
+                    started = time.perf_counter()
+                    response = client.search(
+                        collection_name=collection,
+                        data=batch.tolist(),
+                        anns_field="vec",
+                        limit=args.k,
+                        search_params={
+                            "metric_type": "L2",
+                            "params": {"nprobe": nprobe},
+                        },
+                        output_fields=[],
+                    )
+                    run_latencies.append((time.perf_counter() - started) * 1000)
+                    found.extend(search_ids(response))
+                elapsed = time.perf_counter() - started_all
+                qps_samples.append(len(queries) / elapsed)
+                recall_samples.append(recall_at_k(found, neighbors, args.k))
+                latencies.extend(run_latencies)
             results.append(
                 {
                     "nprobe": nprobe,
-                    "qps": len(queries) / elapsed,
-                    "recall@10": recall_at_k(found, neighbors, args.k),
+                    "runs": args.runs,
+                    "qps": median_measurement(qps_samples),
+                    "qps_aggregation": "median",
+                    "qps_samples": qps_samples,
+                    "recall@10": median_measurement(recall_samples),
                     "p50_batch_ms": statistics.median(latencies),
                     "p99_batch_ms": percentile(latencies, 0.99),
                     "query_batch_size": args.query_batch,
@@ -354,6 +386,8 @@ def benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         "m": args.m if args.index_type == "GPU_IVF_PQ" else None,
         "nbits": args.nbits if args.index_type == "GPU_IVF_PQ" else None,
         "k": args.k,
+        "runs": args.runs,
+        "qps_aggregation": "median",
         "nprobes": nprobes,
         "xb_shape": list(train.shape),
         "xq_shape": list(queries.shape),

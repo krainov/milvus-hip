@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
 import socket
+import statistics
 import subprocess
 import time
 from datetime import datetime, timezone
@@ -12,6 +14,19 @@ from typing import Any, Callable, TypeVar
 
 
 T = TypeVar("T")
+
+
+def positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("value must be at least 1")
+    return parsed
+
+
+def median_measurement(values: list[float]) -> float:
+    if not values:
+        raise ValueError("at least one measurement is required")
+    return float(statistics.median(values))
 
 
 def utc_now() -> str:
