@@ -322,9 +322,9 @@ def benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         ]
 
         def search_sweep(
-            search_params: dict[str, Any], *, collect_ids: bool
-        ) -> tuple[list[list[int]], list[float]]:
-            found: list[list[int]] = []
+            search_params: dict[str, Any],
+        ) -> tuple[list[Any], list[float]]:
+            responses: list[Any] = []
             batch_latencies: list[float] = []
             for batch in query_batches:
                 started = time.perf_counter()
@@ -337,9 +337,8 @@ def benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                     output_fields=[],
                 )
                 batch_latencies.append((time.perf_counter() - started) * 1000)
-                if collect_ids:
-                    found.extend(search_ids(response))
-            return found, batch_latencies
+                responses.append(response)
+            return responses, batch_latencies
 
         for nprobe in nprobes:
             qps_samples: list[float] = []
@@ -349,17 +348,21 @@ def benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                 "params": {"nprobe": nprobe},
             }
             for _ in range(args.warmup_runs):
-                search_sweep(search_params, collect_ids=False)
+                search_sweep(search_params)
 
             found: list[list[int]] = []
-            for _ in range(args.runs):
+            for run_index in range(args.runs):
                 started_all = time.perf_counter()
-                found, run_latencies = search_sweep(
-                    search_params, collect_ids=True
-                )
+                responses, run_latencies = search_sweep(search_params)
                 elapsed = time.perf_counter() - started_all
                 qps_samples.append(len(queries) / elapsed)
                 latencies.extend(run_latencies)
+                if run_index == args.runs - 1:
+                    found = [
+                        ids
+                        for response in responses
+                        for ids in search_ids(response)
+                    ]
             results.append(
                 {
                     "nprobe": nprobe,
@@ -404,7 +407,7 @@ def benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         "runs": args.runs,
         "qps_aggregation": "median",
         "query_batch_size": args.query_batch,
-        "search_protocol": "per-nprobe-complete-query-sweep-v1",
+        "search_protocol": "per-nprobe-full-batch-client-call-v1",
         "nprobes": nprobes,
         "xb_shape": list(train.shape),
         "xq_shape": list(queries.shape),

@@ -17,7 +17,7 @@ class BenchmarkComparisonTest(unittest.TestCase):
             "runs": 1,
             "qps_aggregation": "median",
             "query_batch_size": 1000,
-            "search_protocol": "per-nprobe-complete-query-sweep-v1",
+            "search_protocol": "per-nprobe-full-batch-client-call-v1",
             "dataset_sha256": "abc",
         }
         self.amd = {

@@ -51,6 +51,19 @@ class BenchmarkRunsTest(unittest.TestCase):
     def test_uses_median_for_run_measurements(self) -> None:
         self.assertEqual(25.0, median_measurement([10.0, 20.0, 30.0, 1000.0]))
 
+    def test_recall_postprocessing_is_outside_qps_timer(self) -> None:
+        benchmark = (
+            REPOSITORY_ROOT / "scripts/ci/amd_gpu/benchmark_milvus.py"
+        ).read_text()
+        timed_loop = benchmark.split(
+            "for run_index in range(args.runs):", maxsplit=1
+        )[1].split("results.append(", maxsplit=1)[0]
+
+        self.assertLess(
+            timed_loop.index("elapsed = time.perf_counter() - started_all"),
+            timed_loop.index("for ids in search_ids(response)"),
+        )
+
     def test_workflow_accepts_nightly_gist_run_count(self) -> None:
         workflow = (
             REPOSITORY_ROOT / ".github/workflows/amd-gpu-parity.yaml"
