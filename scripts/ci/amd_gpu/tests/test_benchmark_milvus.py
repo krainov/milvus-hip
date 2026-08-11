@@ -142,6 +142,22 @@ class BenchmarkRunsTest(unittest.TestCase):
         self.assertIn('/tmp/milvus-*-amd | /tmp/milvus-*-nvidia', service)
         self.assertIn('printf \'milvus-gpu-ci\\n\' >"${runtime_marker}"', service)
         self.assertIn('rm -rf -- "${runtime_dir}"', service)
+        self.assertIn('--volume "${runtime_dir}:/ci-runtime"', service)
+        self.assertIn("rm -rf /ci-runtime/*", service)
+
+    def test_ci_milvus_removes_only_current_ci_object_prefix(self) -> None:
+        service = (
+            REPOSITORY_ROOT / "scripts/ci/amd_gpu/milvus_service.sh"
+        ).read_text()
+        workflow = (
+            REPOSITORY_ROOT / ".github/workflows/amd-gpu-parity.yaml"
+        ).read_text()
+
+        self.assertIn("ci-*-amd | ci-*-nvidia", service)
+        self.assertIn('"ci/${bucket}/${prefix}"', service)
+        self.assertIn("MILVUS_CI_MINIO_ACCESS_KEY", workflow)
+        self.assertIn("MILVUS_CI_MINIO_SECRET_KEY", workflow)
+        self.assertEqual(2, workflow.count("minio/mc@sha256:"))
 
     def test_amd_gtests_use_a_pinned_ci_owned_checkout(self) -> None:
         workflow = (

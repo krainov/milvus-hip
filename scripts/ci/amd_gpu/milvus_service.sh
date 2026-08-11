@@ -48,8 +48,47 @@ cleanup_runtime_dir() {
         fi
         return 0
     fi
-    rm -rf -- "${runtime_dir}"
+    if is_container_mode; then
+        docker run --rm \
+            --volume "${runtime_dir}:/ci-runtime" \
+            --entrypoint /bin/sh \
+            "${MILVUS_CI_IMAGE}" \
+            -c 'rm -rf /ci-runtime/* /ci-runtime/.[!.]* /ci-runtime/..?*'
+        rmdir "${runtime_dir}"
+    else
+        rm -rf -- "${runtime_dir}"
+    fi
     echo "Removed CI runtime directory ${runtime_dir}"
+}
+
+cleanup_object_storage() {
+    if [[ ! -f "${runtime_marker}" ]] ||
+        [[ "$(<"${runtime_marker}")" != "milvus-gpu-ci" ]]; then
+        return 0
+    fi
+
+    local prefix=${MILVUS_CI_MINIO_ROOT_PATH:?MILVUS_CI_MINIO_ROOT_PATH is required}
+    case "${prefix}" in
+        ci-*-amd | ci-*-nvidia) ;;
+        *)
+            echo "Refusing to remove non-CI object prefix: ${prefix}" >&2
+            return 1
+            ;;
+    esac
+
+    local access_key=${MILVUS_CI_MINIO_ACCESS_KEY:?MILVUS_CI_MINIO_ACCESS_KEY is required}
+    local secret_key=${MILVUS_CI_MINIO_SECRET_KEY:?MILVUS_CI_MINIO_SECRET_KEY is required}
+    local endpoint=${MILVUS_CI_MINIO_CLEANUP_ENDPOINT:-http://127.0.0.1:9000}
+    local bucket=${MILVUS_CI_MINIO_BUCKET:-a-bucket}
+    local image=${MILVUS_CI_MINIO_CLEANUP_IMAGE:?MILVUS_CI_MINIO_CLEANUP_IMAGE is required}
+
+    export MC_HOST_ci="${endpoint/http:\/\//http://${access_key}:${secret_key}@}"
+    docker run --rm --network host \
+        --env MC_HOST_ci \
+        "${image}" \
+        rm --recursive --force "ci/${bucket}/${prefix}" >/dev/null
+    unset MC_HOST_ci
+    echo "Removed CI object prefix ${bucket}/${prefix}"
 }
 
 start_dependencies() {
@@ -145,6 +184,7 @@ stop_milvus() {
         echo "Another Milvus process still owns ${health_uri}" >&2
         return 1
     fi
+    cleanup_object_storage
     cleanup_runtime_dir
     echo "Milvus stopped"
 }

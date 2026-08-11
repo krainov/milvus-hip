@@ -94,6 +94,9 @@ jobs:
       MILVUS_CI_RUNTIME_DIR: /tmp/milvus-${{ github.run_id }}-${{ github.run_attempt }}-amd
       MILVUS_CI_ETCD_ROOT_PATH: ci-${{ github.run_id }}-${{ github.run_attempt }}-amd
       MILVUS_CI_MINIO_ROOT_PATH: ci-${{ github.run_id }}-${{ github.run_attempt }}-amd
+      MILVUS_CI_MINIO_ACCESS_KEY: ${{ secrets.MILVUS_CI_MINIO_ACCESS_KEY }}
+      MILVUS_CI_MINIO_SECRET_KEY: ${{ secrets.MILVUS_CI_MINIO_SECRET_KEY }}
+      MILVUS_CI_MINIO_CLEANUP_IMAGE: minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
       MILVUS_CI_EXTRA_LD_LIBRARY_PATH: /home/amd/rocmds_check_gfx1100/install/lib:/opt/rocm/lib
     steps:
       - name: Checkout
@@ -376,6 +379,9 @@ jobs:
       MILVUS_CI_ETCD_ROOT_PATH: ci-${{ github.run_id }}-${{ github.run_attempt }}-nvidia
       MILVUS_CI_MINIO_ADDRESS: minio:9000
       MILVUS_CI_MINIO_ROOT_PATH: ci-${{ github.run_id }}-${{ github.run_attempt }}-nvidia
+      MILVUS_CI_MINIO_ACCESS_KEY: ${{ secrets.MILVUS_CI_MINIO_ACCESS_KEY }}
+      MILVUS_CI_MINIO_SECRET_KEY: ${{ secrets.MILVUS_CI_MINIO_SECRET_KEY }}
+      MILVUS_CI_MINIO_CLEANUP_IMAGE: minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
     steps:
       - name: Checkout
         uses: actions/checkout@v4

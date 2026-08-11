@@ -72,13 +72,15 @@ server produces good benchmark numbers.
 
 Before Runner Doctor, the workflow acquires exclusive GPU access by gracefully
 stopping active GPU compute processes or their owning Docker containers. It
-does not remove containers, source trees, build trees, datasets, MinIO, or
-etcd. Runner Doctor then requires an idle GPU.
+does not remove dependency containers, source trees, build trees, datasets,
+MinIO, or etcd. Runner Doctor then requires an idle GPU.
 
 A newly built Milvus is started with run-specific storage roots and
 health/provenance checked before product benchmarks. The final `always()`
 cleanup stops only the Milvus process or container marked as CI-managed and
-leaves dependency containers running.
+leaves dependency containers running. It then removes the marked per-run
+runtime directory and the exact `ci-<run>-<attempt>-<backend>` object prefix.
+The prefix is deleted through the S3 API; no other MinIO data is touched.
 
 ## Runner contract
 
@@ -112,6 +114,10 @@ NVIDIA gtests can run in a CUDA build container by also setting:
 
 The workflow owns all Milvus image, binary, container, PID, log, and runtime
 paths. Runner configuration must not point it at a preinstalled Milvus.
+
+MinIO credentials are stored only in the repository Actions secrets
+`MILVUS_CI_MINIO_ACCESS_KEY` and `MILVUS_CI_MINIO_SECRET_KEY`. They are passed
+only to the pinned cleanup client and are never written to evidence artifacts.
 
 ## AI boundary
 
