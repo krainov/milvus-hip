@@ -27,7 +27,6 @@ env:
   SIFT1M_SHA256: dd6f0a6ed6b7ebb8934680f861a33ed01ff33991eaee4fd60914d854a0ca5984
   GIST1M_SHA256: 8e95831936bfdbfa0a56086942e2cf98cd703517c67f985914183eb4cdbf026a
   GIST_BENCHMARK_RUNS: ${{ github.event_name == 'workflow_dispatch' && inputs.gist_runs || '10' }}
-  GIST_FLAT_BENCHMARK_RUNS: "10"
   GIST_BENCHMARK_WARMUP_RUNS: "5"
   GIST_BENCHMARK_QUERY_BATCH: "1000"
   MILVUS_CI_GPU_INIT_MEM_SIZE: "0"
@@ -256,6 +255,10 @@ jobs:
         id: gist_ivf_flat
         continue-on-error: true
         run: |
+          nightly_protocol=()
+          if (( GIST_BENCHMARK_RUNS >= 1000 )); then
+            nightly_protocol+=(--interleave-nprobes --recall-runs 10)
+          fi
           "${GPU_BENCH_PYTHON}" scripts/ci/amd_gpu/benchmark_milvus.py \
             --backend amd \
             --uri "${MILVUS_BENCH_URI}" \
@@ -274,7 +277,8 @@ jobs:
             --query-batch "${GIST_BENCHMARK_QUERY_BATCH}" \
             --max-query-rows 1000 \
             --warmup-runs "${GIST_BENCHMARK_WARMUP_RUNS}" \
-            --runs "${GIST_FLAT_BENCHMARK_RUNS}" \
+            --runs "${GIST_BENCHMARK_RUNS}" \
+            "${nightly_protocol[@]}" \
             --require-source-match \
             --output gpu-evidence/benchmark-amd-gist-ivf-flat.json \
             |& tee gpu-evidence/benchmark-amd-gist-ivf-flat.log
@@ -531,6 +535,10 @@ jobs:
         id: gist_ivf_flat
         continue-on-error: true
         run: |
+          nightly_protocol=()
+          if (( GIST_BENCHMARK_RUNS >= 1000 )); then
+            nightly_protocol+=(--interleave-nprobes --recall-runs 10)
+          fi
           "${GPU_BENCH_PYTHON}" scripts/ci/amd_gpu/benchmark_milvus.py \
             --backend nvidia \
             --uri "${MILVUS_BENCH_URI}" \
@@ -549,7 +557,8 @@ jobs:
             --query-batch "${GIST_BENCHMARK_QUERY_BATCH}" \
             --max-query-rows 1000 \
             --warmup-runs "${GIST_BENCHMARK_WARMUP_RUNS}" \
-            --runs "${GIST_FLAT_BENCHMARK_RUNS}" \
+            --runs "${GIST_BENCHMARK_RUNS}" \
+            "${nightly_protocol[@]}" \
             --require-source-match \
             --output gpu-evidence/benchmark-nvidia-gist-ivf-flat.json \
             |& tee gpu-evidence/benchmark-nvidia-gist-ivf-flat.log

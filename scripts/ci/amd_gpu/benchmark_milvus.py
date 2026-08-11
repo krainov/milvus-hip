@@ -21,6 +21,7 @@ from pymilvus import DataType, MilvusClient
 try:
     from .common import (
         median_measurement,
+        population_stddev,
         positive_int,
         retry_operation,
         sha256,
@@ -31,6 +32,7 @@ try:
 except ImportError:
     from common import (
         median_measurement,
+        population_stddev,
         positive_int,
         retry_operation,
         sha256,
@@ -390,12 +392,17 @@ def benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                     recall_samples.append(
                         recall_at_k(recall_ids, neighbors, args.k)
                     )
+            qps = median_measurement(qps_samples)
+            qps_stddev = population_stddev(qps_samples)
             return {
                 "nprobe": nprobe,
                 "warmup_runs": args.warmup_runs,
                 "runs": args.runs,
-                "qps": median_measurement(qps_samples),
+                "qps": qps,
                 "qps_aggregation": "median",
+                "qps_stddev": qps_stddev,
+                "qps_stddev_kind": "population",
+                "qps_cv_percent": (qps_stddev / qps * 100.0) if qps else None,
                 "qps_samples": qps_samples,
                 "recall@10": median_measurement(recall_samples),
                 "recall_aggregation": "median",

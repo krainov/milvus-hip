@@ -84,6 +84,8 @@ def compare_benchmarks(
                 "nprobe": nprobe,
                 "amd": {
                     "qps": float(amd_row["qps"]),
+                    "qps_stddev": amd_row.get("qps_stddev"),
+                    "qps_cv_percent": amd_row.get("qps_cv_percent"),
                     "recall_at_10": amd_recall,
                     "p99_batch_ms": amd_row.get(
                         "p99_batch_ms", amd_row.get("p99_ms")
@@ -91,6 +93,8 @@ def compare_benchmarks(
                 },
                 "nvidia": {
                     "qps": nvidia_qps,
+                    "qps_stddev": nvidia_row.get("qps_stddev"),
+                    "qps_cv_percent": nvidia_row.get("qps_cv_percent"),
                     "recall_at_10": nvidia_recall,
                     "p99_batch_ms": nvidia_row.get(
                         "p99_batch_ms", nvidia_row.get("p99_ms")

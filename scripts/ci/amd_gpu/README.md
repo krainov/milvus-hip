@@ -39,9 +39,11 @@ scheduler on the repository's default branch dispatches this workflow with
 `gist_runs=1000`, because GitHub does not execute `schedule` triggers from the
 `v2.5.4` integration branch. The compatible `qps` value in nightly evidence is
 the median of those 1,000 samples, while `qps_samples`, `runs`, and
-`qps_aggregation`, `warmup_runs`, `query_batch_size`, and `search_protocol`
-retain the aggregation provenance. This repeats searches against one index
-build; it does not claim index-build repeatability. QPS measures complete
+`qps_aggregation`, `qps_stddev`, `qps_cv_percent`, `warmup_runs`,
+`query_batch_size`, and `search_protocol` retain the aggregation provenance.
+The reported sigma is the population standard deviation across the 1,000 QPS
+samples. This repeats searches against one index build; it does not claim
+index-build repeatability. QPS measures complete
 `MilvusClient.search()` calls; returned-ID conversion for recall stays outside
 the timed region. Nightly samples are interleaved by `nprobe` round, with a
 rotating first point, so gradual runtime stabilization and order effects are
@@ -50,9 +52,9 @@ sequential to match the reference harness. Nightly recall is the median of 10
 untimed validation searches per `nprobe`, so a single nondeterministic result
 cannot create a numerical failure. A manual 1000-run check can be started with
 the same `gist_runs` workflow input.
-GIST `GPU_IVF_FLAT` uses the same five-warm-up/10-run protocol in both regular
-and nightly workflows; the 1,000-run nightly series remains specific to
-GIST `GPU_IVF_PQ`. CI starts Milvus with `gpu.initMemSize=0` and
+GIST `GPU_IVF_FLAT` and `GPU_IVF_PQ` both use the five-warm-up/10-run protocol
+for pull requests and the rotating 1,000-run protocol for nightly evidence.
+CI starts Milvus with `gpu.initMemSize=0` and
 `gpu.maxMemSize=0`, the documented auto-sizing mode, because the default
 4,096 MiB pool cannot load the full GIST IVF_FLAT index. GPU isolation keeps
 the auto-sized pool exclusive to the CI process.

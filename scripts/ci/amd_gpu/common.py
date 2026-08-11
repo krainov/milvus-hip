@@ -29,6 +29,12 @@ def median_measurement(values: list[float]) -> float:
     return float(statistics.median(values))
 
 
+def population_stddev(values: list[float]) -> float:
+    if not values:
+        raise ValueError("at least one measurement is required")
+    return float(statistics.pstdev(values))
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 

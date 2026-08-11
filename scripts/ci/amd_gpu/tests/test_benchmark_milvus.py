@@ -7,6 +7,7 @@ from pathlib import Path
 
 from scripts.ci.amd_gpu.common import (
     median_measurement,
+    population_stddev,
     positive_int,
     verify_sha256,
 )
@@ -51,6 +52,9 @@ class BenchmarkRunsTest(unittest.TestCase):
     def test_uses_median_for_run_measurements(self) -> None:
         self.assertEqual(25.0, median_measurement([10.0, 20.0, 30.0, 1000.0]))
 
+    def test_reports_population_sigma_for_run_measurements(self) -> None:
+        self.assertAlmostEqual(1.11803398875, population_stddev([1, 2, 3, 4]))
+
     def test_recall_postprocessing_is_outside_qps_timer(self) -> None:
         benchmark = (
             REPOSITORY_ROOT / "scripts/ci/amd_gpu/benchmark_milvus.py"
@@ -86,11 +90,8 @@ class BenchmarkRunsTest(unittest.TestCase):
 
         self.assertIn("gist_runs:", workflow)
         self.assertIn("inputs.gist_runs || '10'", workflow)
-        self.assertEqual(2, workflow.count('--runs "${GIST_BENCHMARK_RUNS}"'))
-        self.assertEqual(
-            2,
-            workflow.count('--runs "${GIST_FLAT_BENCHMARK_RUNS}"'),
-        )
+        self.assertEqual(4, workflow.count('--runs "${GIST_BENCHMARK_RUNS}"'))
+        self.assertNotIn("GIST_FLAT_BENCHMARK_RUNS", workflow)
         self.assertEqual(
             4,
             workflow.count(
@@ -101,10 +102,10 @@ class BenchmarkRunsTest(unittest.TestCase):
             4,
             workflow.count('--query-batch "${GIST_BENCHMARK_QUERY_BATCH}"'),
         )
-        self.assertEqual(2, workflow.count("--interleave-nprobes"))
-        self.assertEqual(2, workflow.count("--recall-runs 10"))
+        self.assertEqual(4, workflow.count("--interleave-nprobes"))
+        self.assertEqual(4, workflow.count("--recall-runs 10"))
         self.assertEqual(
-            2,
+            4,
             workflow.count("if (( GIST_BENCHMARK_RUNS >= 1000 )); then"),
         )
         self.assertIn("benchmark-amd-gist-ivf-flat.json", workflow)

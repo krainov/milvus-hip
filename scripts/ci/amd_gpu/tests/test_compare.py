@@ -26,7 +26,13 @@ class BenchmarkComparisonTest(unittest.TestCase):
         self.amd = {
             **common,
             "nprobe_results": [
-                {"nprobe": 1, "qps": 200.0, "recall@10": 0.40},
+                {
+                    "nprobe": 1,
+                    "qps": 200.0,
+                    "qps_stddev": 12.0,
+                    "qps_cv_percent": 6.0,
+                    "recall@10": 0.40,
+                },
                 {"nprobe": 4, "qps": 180.0, "recall@10": 0.70},
             ],
         }
@@ -42,6 +48,8 @@ class BenchmarkComparisonTest(unittest.TestCase):
         result = compare_benchmarks(self.amd, self.nvidia, 0.005)
         self.assertEqual("pass", result["status"])
         self.assertAlmostEqual(2.0, result["rows"][0]["qps_ratio_amd_to_nvidia"])
+        self.assertEqual(12.0, result["rows"][0]["amd"]["qps_stddev"])
+        self.assertEqual(6.0, result["rows"][0]["amd"]["qps_cv_percent"])
 
     def test_recall_regression_fails(self) -> None:
         self.amd["nprobe_results"][1]["recall@10"] = 0.60
