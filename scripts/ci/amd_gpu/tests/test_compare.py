@@ -17,6 +17,7 @@ class BenchmarkComparisonTest(unittest.TestCase):
             "runs": 1,
             "qps_aggregation": "median",
             "query_batch_size": 1000,
+            "interleave_nprobes": False,
             "search_protocol": "per-nprobe-full-batch-client-call-v1",
             "dataset_sha256": "abc",
         }
@@ -80,13 +81,26 @@ class BenchmarkComparisonTest(unittest.TestCase):
             result["metadata_mismatches"]["runs"],
         )
 
-    def test_mismatched_search_protocol_fails(self) -> None:
+    def test_mismatched_query_batch_fails(self) -> None:
         self.nvidia["query_batch_size"] = 100
         result = compare_benchmarks(self.amd, self.nvidia, 0.005)
         self.assertEqual("fail", result["status"])
         self.assertEqual(
             {"amd": 1000, "nvidia": 100},
             result["metadata_mismatches"]["query_batch_size"],
+        )
+
+    def test_mismatched_interleaving_fails(self) -> None:
+        self.nvidia["interleave_nprobes"] = True
+        self.nvidia["search_protocol"] = (
+            "rotating-interleaved-nprobe-rounds-full-batch-client-call-v1"
+        )
+        result = compare_benchmarks(self.amd, self.nvidia, 0.005)
+
+        self.assertEqual("fail", result["status"])
+        self.assertEqual(
+            {"amd": False, "nvidia": True},
+            result["metadata_mismatches"]["interleave_nprobes"],
         )
 
     def test_excluded_nprobe_is_reported_but_does_not_fail(self) -> None:

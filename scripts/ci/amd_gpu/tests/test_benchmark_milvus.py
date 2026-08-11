@@ -55,14 +55,26 @@ class BenchmarkRunsTest(unittest.TestCase):
         benchmark = (
             REPOSITORY_ROOT / "scripts/ci/amd_gpu/benchmark_milvus.py"
         ).read_text()
-        timed_loop = benchmark.split(
-            "for run_index in range(args.runs):", maxsplit=1
-        )[1].split("results.append(", maxsplit=1)[0]
+        timed_search = benchmark.split("def timed_search(", maxsplit=1)[
+            1
+        ].split("def result_row(", maxsplit=1)[0]
 
-        self.assertLess(
-            timed_loop.index("elapsed = time.perf_counter() - started_all"),
-            timed_loop.index("for ids in search_ids(response)"),
+        self.assertIn(
+            "elapsed = time.perf_counter() - started_all", timed_search
         )
+        self.assertNotIn("search_ids", timed_search)
+
+    def test_long_run_can_interleave_nprobes(self) -> None:
+        benchmark = (
+            REPOSITORY_ROOT / "scripts/ci/amd_gpu/benchmark_milvus.py"
+        ).read_text()
+
+        self.assertIn('"--interleave-nprobes"', benchmark)
+        self.assertIn(
+            "rotating-interleaved-nprobe-rounds-full-batch-client-call-v1",
+            benchmark,
+        )
+        self.assertIn("offset = run_index % len(nprobes)", benchmark)
 
     def test_workflow_accepts_nightly_gist_run_count(self) -> None:
         workflow = (
@@ -85,6 +97,11 @@ class BenchmarkRunsTest(unittest.TestCase):
         self.assertEqual(
             4,
             workflow.count('--query-batch "${GIST_BENCHMARK_QUERY_BATCH}"'),
+        )
+        self.assertEqual(2, workflow.count("--interleave-nprobes"))
+        self.assertEqual(
+            2,
+            workflow.count("if (( GIST_BENCHMARK_RUNS >= 1000 )); then"),
         )
         self.assertIn("benchmark-amd-gist-ivf-flat.json", workflow)
         self.assertIn("benchmark-nvidia-gist-ivf-flat.json", workflow)

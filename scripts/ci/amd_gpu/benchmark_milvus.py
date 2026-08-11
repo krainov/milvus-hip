@@ -202,6 +202,11 @@ def parse_args() -> argparse.Namespace:
         default=1,
         help="Number of complete query sweeps per nprobe; QPS is the median",
     )
+    parser.add_argument(
+        "--interleave-nprobes",
+        action="store_true",
+        help="Measure one sample per nprobe in each round to remove time-order bias",
+    )
     parser.add_argument("--max-train-rows", type=int)
     parser.add_argument("--max-query-rows", type=int)
     parser.add_argument("--keep-collection", action="store_true")
@@ -340,43 +345,97 @@ def benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                 responses.append(response)
             return responses, batch_latencies
 
-        for nprobe in nprobes:
-            qps_samples: list[float] = []
-            latencies: list[float] = []
-            search_params = {
+        search_params_by_nprobe = {
+            nprobe: {
                 "metric_type": "L2",
                 "params": {"nprobe": nprobe},
             }
-            for _ in range(args.warmup_runs):
-                search_sweep(search_params)
+            for nprobe in nprobes
+        }
 
-            found: list[list[int]] = []
-            for run_index in range(args.runs):
-                started_all = time.perf_counter()
-                responses, run_latencies = search_sweep(search_params)
-                elapsed = time.perf_counter() - started_all
-                qps_samples.append(len(queries) / elapsed)
-                latencies.extend(run_latencies)
-                if run_index == args.runs - 1:
-                    found = [
-                        ids
-                        for response in responses
-                        for ids in search_ids(response)
-                    ]
-            results.append(
-                {
-                    "nprobe": nprobe,
-                    "warmup_runs": args.warmup_runs,
-                    "runs": args.runs,
-                    "qps": median_measurement(qps_samples),
-                    "qps_aggregation": "median",
-                    "qps_samples": qps_samples,
-                    "recall@10": recall_at_k(found, neighbors, args.k),
-                    "p50_batch_ms": statistics.median(latencies),
-                    "p99_batch_ms": percentile(latencies, 0.99),
-                    "query_batch_size": args.query_batch,
-                }
+        def timed_search(
+            nprobe: int,
+        ) -> tuple[float, list[float], list[Any]]:
+            started_all = time.perf_counter()
+            responses, run_latencies = search_sweep(
+                search_params_by_nprobe[nprobe]
             )
+            elapsed = time.perf_counter() - started_all
+            return len(queries) / elapsed, run_latencies, responses
+
+        def result_row(
+            nprobe: int,
+            qps_samples: list[float],
+            latencies: list[float],
+            found: list[list[int]],
+        ) -> dict[str, Any]:
+            return {
+                "nprobe": nprobe,
+                "warmup_runs": args.warmup_runs,
+                "runs": args.runs,
+                "qps": median_measurement(qps_samples),
+                "qps_aggregation": "median",
+                "qps_samples": qps_samples,
+                "recall@10": recall_at_k(found, neighbors, args.k),
+                "p50_batch_ms": statistics.median(latencies),
+                "p99_batch_ms": percentile(latencies, 0.99),
+                "query_batch_size": args.query_batch,
+            }
+
+        if args.interleave_nprobes:
+            measurements = {
+                nprobe: {"qps": [], "latencies": [], "found": []}
+                for nprobe in nprobes
+            }
+            for nprobe in nprobes:
+                for _ in range(args.warmup_runs):
+                    search_sweep(search_params_by_nprobe[nprobe])
+
+            for run_index in range(args.runs):
+                offset = run_index % len(nprobes)
+                round_nprobes = nprobes[offset:] + nprobes[:offset]
+                for nprobe in round_nprobes:
+                    qps, run_latencies, responses = timed_search(nprobe)
+                    measurements[nprobe]["qps"].append(qps)
+                    measurements[nprobe]["latencies"].extend(run_latencies)
+                    if run_index == args.runs - 1:
+                        measurements[nprobe]["found"] = [
+                            ids
+                            for response in responses
+                            for ids in search_ids(response)
+                        ]
+
+            for nprobe in nprobes:
+                measurement = measurements[nprobe]
+                results.append(
+                    result_row(
+                        nprobe,
+                        measurement["qps"],
+                        measurement["latencies"],
+                        measurement["found"],
+                    )
+                )
+        else:
+            for nprobe in nprobes:
+                qps_samples: list[float] = []
+                latencies: list[float] = []
+                for _ in range(args.warmup_runs):
+                    search_sweep(search_params_by_nprobe[nprobe])
+
+                found: list[list[int]] = []
+                for run_index in range(args.runs):
+                    qps, run_latencies, responses = timed_search(nprobe)
+                    qps_samples.append(qps)
+                    latencies.extend(run_latencies)
+                    if run_index == args.runs - 1:
+                        found = [
+                            ids
+                            for response in responses
+                            for ids in search_ids(response)
+                        ]
+                results.append(
+                    result_row(nprobe, qps_samples, latencies, found)
+                )
     finally:
         vram = memory.finish()
         if not args.keep_collection and client.has_collection(collection):
@@ -407,7 +466,12 @@ def benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         "runs": args.runs,
         "qps_aggregation": "median",
         "query_batch_size": args.query_batch,
-        "search_protocol": "per-nprobe-full-batch-client-call-v1",
+        "interleave_nprobes": args.interleave_nprobes,
+        "search_protocol": (
+            "rotating-interleaved-nprobe-rounds-full-batch-client-call-v1"
+            if args.interleave_nprobes
+            else "per-nprobe-full-batch-client-call-v1"
+        ),
         "nprobes": nprobes,
         "xb_shape": list(train.shape),
         "xq_shape": list(queries.shape),
@@ -436,6 +500,7 @@ def main() -> int:
             "warmup_runs": args.warmup_runs,
             "runs": args.runs,
             "query_batch_size": args.query_batch,
+            "interleave_nprobes": args.interleave_nprobes,
             "source_provenance": {
                 "status": "fail" if args.require_source_match else "unverified",
                 "requested_commit": os.environ.get("GITHUB_SHA"),

@@ -222,6 +222,10 @@ jobs:
         id: gist_ivf_pq
         continue-on-error: true
         run: |
+          nightly_protocol=()
+          if (( GIST_BENCHMARK_RUNS >= 1000 )); then
+            nightly_protocol+=(--interleave-nprobes)
+          fi
           "${GPU_BENCH_PYTHON}" scripts/ci/amd_gpu/benchmark_milvus.py \
             --backend amd \
             --uri "${MILVUS_BENCH_URI}" \
@@ -243,6 +247,7 @@ jobs:
             --max-query-rows 1000 \
             --warmup-runs "${GIST_BENCHMARK_WARMUP_RUNS}" \
             --runs "${GIST_BENCHMARK_RUNS}" \
+            "${nightly_protocol[@]}" \
             --require-source-match \
             --output gpu-evidence/benchmark-amd-gist-ivf-pq.json \
             |& tee gpu-evidence/benchmark-amd-gist-ivf-pq.log
@@ -492,6 +497,10 @@ jobs:
         id: gist_ivf_pq
         continue-on-error: true
         run: |
+          nightly_protocol=()
+          if (( GIST_BENCHMARK_RUNS >= 1000 )); then
+            nightly_protocol+=(--interleave-nprobes)
+          fi
           "${GPU_BENCH_PYTHON}" scripts/ci/amd_gpu/benchmark_milvus.py \
             --backend nvidia \
             --uri "${MILVUS_BENCH_URI}" \
@@ -513,6 +522,7 @@ jobs:
             --max-query-rows 1000 \
             --warmup-runs "${GIST_BENCHMARK_WARMUP_RUNS}" \
             --runs "${GIST_BENCHMARK_RUNS}" \
+            "${nightly_protocol[@]}" \
             --require-source-match \
             --output gpu-evidence/benchmark-nvidia-gist-ivf-pq.json \
             |& tee gpu-evidence/benchmark-nvidia-gist-ivf-pq.log
