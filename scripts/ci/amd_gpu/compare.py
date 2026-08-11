@@ -23,8 +23,11 @@ def benchmark_metadata(payload: dict[str, Any]) -> dict[str, Any]:
             "m",
             "nbits",
             "k",
+            "warmup_runs",
             "runs",
             "qps_aggregation",
+            "query_batch_size",
+            "search_protocol",
             "dataset_sha256",
         )
     }

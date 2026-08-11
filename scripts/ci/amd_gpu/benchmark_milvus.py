@@ -191,6 +191,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--insert-batch", type=int, default=10_000)
     parser.add_argument("--query-batch", type=int, default=100)
     parser.add_argument(
+        "--warmup-runs",
+        type=int,
+        default=0,
+        help="Discarded complete query sweeps before timing each nprobe",
+    )
+    parser.add_argument(
         "--runs",
         type=positive_int,
         default=1,
@@ -208,7 +214,12 @@ def parse_args() -> argparse.Namespace:
         default=os.environ.get("MILVUS_METRICS_URI", "http://127.0.0.1:9091/metrics"),
     )
     parser.add_argument("--require-source-match", action="store_true")
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.query_batch < 1:
+        parser.error("--query-batch must be at least 1")
+    if args.warmup_runs < 0:
+        parser.error("--warmup-runs must be at least 0")
+    return args
 
 
 def benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
@@ -306,55 +317,58 @@ def benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         client.load_collection(collection_name=collection)
         timings["load"] = time.perf_counter() - started
 
-        warmup_size = min(len(queries), args.query_batch)
-        if warmup_size:
-            client.search(
-                collection_name=collection,
-                data=queries[:warmup_size].tolist(),
-                anns_field="vec",
-                limit=args.k,
-                search_params={
-                    "metric_type": "L2",
-                    "params": {"nprobe": nprobes[0]},
-                },
-                output_fields=[],
-            )
+        query_batches = [
+            batch.tolist() for _, batch in batched(queries, args.query_batch)
+        ]
+
+        def search_sweep(
+            search_params: dict[str, Any], *, collect_ids: bool
+        ) -> tuple[list[list[int]], list[float]]:
+            found: list[list[int]] = []
+            batch_latencies: list[float] = []
+            for batch in query_batches:
+                started = time.perf_counter()
+                response = client.search(
+                    collection_name=collection,
+                    data=batch,
+                    anns_field="vec",
+                    limit=args.k,
+                    search_params=search_params,
+                    output_fields=[],
+                )
+                batch_latencies.append((time.perf_counter() - started) * 1000)
+                if collect_ids:
+                    found.extend(search_ids(response))
+            return found, batch_latencies
 
         for nprobe in nprobes:
             qps_samples: list[float] = []
-            recall_samples: list[float] = []
             latencies: list[float] = []
+            search_params = {
+                "metric_type": "L2",
+                "params": {"nprobe": nprobe},
+            }
+            for _ in range(args.warmup_runs):
+                search_sweep(search_params, collect_ids=False)
+
+            found: list[list[int]] = []
             for _ in range(args.runs):
-                found: list[list[int]] = []
-                run_latencies: list[float] = []
                 started_all = time.perf_counter()
-                for _, batch in batched(queries, args.query_batch):
-                    started = time.perf_counter()
-                    response = client.search(
-                        collection_name=collection,
-                        data=batch.tolist(),
-                        anns_field="vec",
-                        limit=args.k,
-                        search_params={
-                            "metric_type": "L2",
-                            "params": {"nprobe": nprobe},
-                        },
-                        output_fields=[],
-                    )
-                    run_latencies.append((time.perf_counter() - started) * 1000)
-                    found.extend(search_ids(response))
+                found, run_latencies = search_sweep(
+                    search_params, collect_ids=True
+                )
                 elapsed = time.perf_counter() - started_all
                 qps_samples.append(len(queries) / elapsed)
-                recall_samples.append(recall_at_k(found, neighbors, args.k))
                 latencies.extend(run_latencies)
             results.append(
                 {
                     "nprobe": nprobe,
+                    "warmup_runs": args.warmup_runs,
                     "runs": args.runs,
                     "qps": median_measurement(qps_samples),
                     "qps_aggregation": "median",
                     "qps_samples": qps_samples,
-                    "recall@10": median_measurement(recall_samples),
+                    "recall@10": recall_at_k(found, neighbors, args.k),
                     "p50_batch_ms": statistics.median(latencies),
                     "p99_batch_ms": percentile(latencies, 0.99),
                     "query_batch_size": args.query_batch,
@@ -386,8 +400,11 @@ def benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         "m": args.m if args.index_type == "GPU_IVF_PQ" else None,
         "nbits": args.nbits if args.index_type == "GPU_IVF_PQ" else None,
         "k": args.k,
+        "warmup_runs": args.warmup_runs,
         "runs": args.runs,
         "qps_aggregation": "median",
+        "query_batch_size": args.query_batch,
+        "search_protocol": "per-nprobe-complete-query-sweep-v1",
         "nprobes": nprobes,
         "xb_shape": list(train.shape),
         "xq_shape": list(queries.shape),
@@ -413,6 +430,9 @@ def main() -> int:
             "dataset_id": args.dataset_id or args.dataset.stem,
             "index_type": args.index_type,
             "dataset_sha256": sha256(args.dataset) if args.dataset.is_file() else None,
+            "warmup_runs": args.warmup_runs,
+            "runs": args.runs,
+            "query_batch_size": args.query_batch,
             "source_provenance": {
                 "status": "fail" if args.require_source_match else "unverified",
                 "requested_commit": os.environ.get("GITHUB_SHA"),

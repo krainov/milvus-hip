@@ -13,8 +13,11 @@ class BenchmarkComparisonTest(unittest.TestCase):
             "m": 32,
             "nbits": 8,
             "k": 10,
+            "warmup_runs": 5,
             "runs": 1,
             "qps_aggregation": "median",
+            "query_batch_size": 1000,
+            "search_protocol": "per-nprobe-complete-query-sweep-v1",
             "dataset_sha256": "abc",
         }
         self.amd = {
@@ -75,6 +78,15 @@ class BenchmarkComparisonTest(unittest.TestCase):
         self.assertEqual(
             {"amd": 1000, "nvidia": 1},
             result["metadata_mismatches"]["runs"],
+        )
+
+    def test_mismatched_search_protocol_fails(self) -> None:
+        self.nvidia["query_batch_size"] = 100
+        result = compare_benchmarks(self.amd, self.nvidia, 0.005)
+        self.assertEqual("fail", result["status"])
+        self.assertEqual(
+            {"amd": 1000, "nvidia": 100},
+            result["metadata_mismatches"]["query_batch_size"],
         )
 
     def test_excluded_nprobe_is_reported_but_does_not_fail(self) -> None:

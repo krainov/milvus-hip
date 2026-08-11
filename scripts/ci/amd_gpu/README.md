@@ -17,8 +17,9 @@ requires all of the following:
   `DISTANCE_C_TEST` are all retained in evidence;
 - brute-force, IVF_FLAT, IVF_PQ, and distance have the same passing cases on
   hipVS and cuVS. CAGRA remains visible but is non-gating for the current PoC;
-- Milvus SIFT-1M `GPU_IVF_FLAT`, SIFT-1M `GPU_IVF_PQ`, and GIST-1M
-  `GPU_IVF_PQ` recall@10 differ by no more than `0.015`. This MVP tolerance is
+- Milvus SIFT-1M `GPU_IVF_FLAT`, SIFT-1M `GPU_IVF_PQ`, GIST-1M
+  `GPU_IVF_PQ`, and GIST-1M `GPU_IVF_FLAT` recall@10 differ by no more than
+  `0.015`. This MVP tolerance is
   based on three clean exact-SHA comparison runs, whose largest observed
   absolute delta was `0.014`. Before upstreaming, replace this empirical
   allowance with repeated or seeded index builds and re-baseline it;
@@ -30,14 +31,21 @@ is too noisy for this comparison.
 
 ## Nightly GIST measurements
 
-Pushes and pull requests run one GIST query sweep per `nprobe`. The nightly
+Pushes and pull requests run 10 measured GIST query sweeps per `nprobe`. Each
+point first runs five discarded warm-up sweeps. A sweep sends all 1,000 GIST
+queries in one gRPC request, matching the frozen product-path protocol; query
+vectors are converted outside the timed region. The nightly
 scheduler on the repository's default branch dispatches this workflow with
 `gist_runs=1000`, because GitHub does not execute `schedule` triggers from the
 `v2.5.4` integration branch. The compatible `qps` value in nightly evidence is
 the median of those 1,000 samples, while `qps_samples`, `runs`, and
-`qps_aggregation` retain the aggregation provenance. This repeats searches
-against one index build; it does not claim index-build repeatability. A manual
-1000-run check can be started with the same `gist_runs` workflow input.
+`qps_aggregation`, `warmup_runs`, `query_batch_size`, and `search_protocol`
+retain the aggregation provenance. This repeats searches against one index
+build; it does not claim index-build repeatability. A manual 1000-run check can
+be started with the same `gist_runs` workflow input.
+GIST `GPU_IVF_FLAT` uses the same five-warm-up/10-run protocol in both regular
+and nightly workflows; the 1,000-run nightly series remains specific to
+GIST `GPU_IVF_PQ`.
 The nightly verdict gates runner/build/source health, shared C API tests, and
 GIST parity. The one-sweep SIFT comparisons remain visible as evidence but are
 non-gating in this mode; ordinary pull request runs continue to gate on them.

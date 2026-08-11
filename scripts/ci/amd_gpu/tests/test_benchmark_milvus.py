@@ -57,8 +57,24 @@ class BenchmarkRunsTest(unittest.TestCase):
         ).read_text()
 
         self.assertIn("gist_runs:", workflow)
-        self.assertIn("inputs.gist_runs || '1'", workflow)
+        self.assertIn("inputs.gist_runs || '10'", workflow)
         self.assertEqual(2, workflow.count('--runs "${GIST_BENCHMARK_RUNS}"'))
+        self.assertEqual(
+            2,
+            workflow.count('--runs "${GIST_FLAT_BENCHMARK_RUNS}"'),
+        )
+        self.assertEqual(
+            4,
+            workflow.count(
+                '--warmup-runs "${GIST_BENCHMARK_WARMUP_RUNS}"'
+            ),
+        )
+        self.assertEqual(
+            4,
+            workflow.count('--query-batch "${GIST_BENCHMARK_QUERY_BATCH}"'),
+        )
+        self.assertIn("benchmark-amd-gist-ivf-flat.json", workflow)
+        self.assertIn("benchmark-nvidia-gist-ivf-flat.json", workflow)
 
     def test_amd_gtests_use_a_pinned_ci_owned_checkout(self) -> None:
         workflow = (
