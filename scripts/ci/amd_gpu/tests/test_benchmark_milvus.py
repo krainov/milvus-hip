@@ -131,6 +131,18 @@ class BenchmarkRunsTest(unittest.TestCase):
             'GPU_MAXMEMSIZE=${MILVUS_CI_GPU_MAX_MEM_SIZE:-4096}', service
         )
 
+    def test_ci_milvus_removes_only_marked_runtime_directories(self) -> None:
+        service = (
+            REPOSITORY_ROOT / "scripts/ci/amd_gpu/milvus_service.sh"
+        ).read_text()
+
+        self.assertIn(
+            'runtime_marker="${runtime_dir}/.milvus-ci-owned"', service
+        )
+        self.assertIn('/tmp/milvus-*-amd | /tmp/milvus-*-nvidia', service)
+        self.assertIn('printf \'milvus-gpu-ci\\n\' >"${runtime_marker}"', service)
+        self.assertIn('rm -rf -- "${runtime_dir}"', service)
+
     def test_amd_gtests_use_a_pinned_ci_owned_checkout(self) -> None:
         workflow = (
             REPOSITORY_ROOT / ".github/workflows/amd-gpu-parity.yaml"

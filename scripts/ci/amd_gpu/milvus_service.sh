@@ -8,6 +8,7 @@ internal_grpc_port=${MILVUS_CI_INTERNAL_GRPC_PORT:-19529}
 metrics_port=${MILVUS_CI_METRICS_PORT:-9091}
 health_uri=${MILVUS_CI_HEALTH_URI:-http://127.0.0.1:${metrics_port}/healthz}
 runtime_dir=${MILVUS_CI_RUNTIME_DIR:?MILVUS_CI_RUNTIME_DIR is required}
+runtime_marker="${runtime_dir}/.milvus-ci-owned"
 
 runtime_env=(
     "MILVUS_CI_MANAGED=1"
@@ -24,6 +25,31 @@ runtime_env=(
 
 is_container_mode() {
     [[ -n "${MILVUS_CI_IMAGE:-}" ]]
+}
+
+prepare_runtime_dir() {
+    case "${runtime_dir}" in
+        /tmp/milvus-*-amd | /tmp/milvus-*-nvidia) ;;
+        *)
+            echo "Refusing to manage non-CI runtime directory: ${runtime_dir}" >&2
+            return 1
+            ;;
+    esac
+    mkdir -p "${runtime_dir}"
+    printf 'milvus-gpu-ci\n' >"${runtime_marker}"
+}
+
+cleanup_runtime_dir() {
+    if [[ ! -f "${runtime_marker}" ]] ||
+        [[ "$(<"${runtime_marker}")" != "milvus-gpu-ci" ]]; then
+        if [[ -e "${runtime_dir}" ]]; then
+            echo "Refusing to remove unmarked runtime directory: ${runtime_dir}" >&2
+            return 1
+        fi
+        return 0
+    fi
+    rm -rf -- "${runtime_dir}"
+    echo "Removed CI runtime directory ${runtime_dir}"
 }
 
 start_dependencies() {
@@ -119,6 +145,7 @@ stop_milvus() {
         echo "Another Milvus process still owns ${health_uri}" >&2
         return 1
     fi
+    cleanup_runtime_dir
     echo "Milvus stopped"
 }
 
@@ -133,7 +160,8 @@ start_binary() {
         return 1
     fi
 
-    mkdir -p "${runtime_dir}" "$(dirname "${pid_file}")" "$(dirname "${log_file}")"
+    prepare_runtime_dir
+    mkdir -p "$(dirname "${pid_file}")" "$(dirname "${log_file}")"
     (
         cd "${root}"
         set +u
@@ -187,7 +215,7 @@ start_container() {
         return 1
     fi
 
-    mkdir -p "${runtime_dir}"
+    prepare_runtime_dir
     stop_container
     local docker_env=()
     local item
