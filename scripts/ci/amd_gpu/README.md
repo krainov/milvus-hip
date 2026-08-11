@@ -57,7 +57,9 @@ for pull requests and the rotating 1,000-run protocol for nightly evidence.
 CI starts Milvus with `gpu.initMemSize=0` and
 `gpu.maxMemSize=0`, the documented auto-sizing mode, because the default
 4,096 MiB pool cannot load the full GIST IVF_FLAT index. GPU isolation keeps
-the auto-sized pool exclusive to the CI process.
+the auto-sized pool exclusive to the CI process. NVIDIA jobs prune only Docker
+images carrying the `com.dxc.milvus.gpu-ci-image=true` label before and after
+execution so per-commit runtime images cannot fill the shared runner disk.
 The nightly verdict gates runner/build/source health, shared C API tests, and
 GIST parity. The one-sweep SIFT comparisons remain visible as evidence but are
 non-gating in this mode; ordinary pull request runs continue to gate on them.

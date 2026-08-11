@@ -392,6 +392,9 @@ jobs:
           service_rc=0
           bash scripts/ci/amd_gpu/milvus_service.sh stop \
             |& tee gpu-evidence/stop-milvus-nvidia.log || service_rc=$?
+          docker image prune --all --force \
+            --filter label=com.dxc.milvus.gpu-ci-image=true \
+            |& tee gpu-evidence/prune-images-before-nvidia.log
           isolation_rc=0
           python3 scripts/ci/amd_gpu/gpu_isolation.py \
             --backend nvidia \
@@ -570,6 +573,9 @@ jobs:
         run: |
           bash scripts/ci/amd_gpu/milvus_service.sh stop \
             |& tee gpu-evidence/cleanup-milvus-nvidia.log
+          docker image prune --all --force \
+            --filter label=com.dxc.milvus.gpu-ci-image=true \
+            |& tee gpu-evidence/prune-images-after-nvidia.log
 
       - name: Deterministic failure triage
         if: always()

@@ -112,6 +112,12 @@ class BenchmarkRunsTest(unittest.TestCase):
         self.assertIn("benchmark-nvidia-gist-ivf-flat.json", workflow)
         self.assertIn('MILVUS_CI_GPU_INIT_MEM_SIZE: "0"', workflow)
         self.assertIn('MILVUS_CI_GPU_MAX_MEM_SIZE: "0"', workflow)
+        self.assertEqual(
+            2,
+            workflow.count(
+                "--filter label=com.dxc.milvus.gpu-ci-image=true"
+            ),
+        )
 
     def test_ci_milvus_can_use_available_gpu_memory_for_gist_flat(self) -> None:
         service = (
