@@ -18,6 +18,8 @@ class BenchmarkComparisonTest(unittest.TestCase):
             "qps_aggregation": "median",
             "query_batch_size": 1000,
             "interleave_nprobes": False,
+            "recall_aggregation": "median",
+            "recall_runs": 1,
             "search_protocol": "per-nprobe-full-batch-client-call-v1",
             "dataset_sha256": "abc",
         }
@@ -101,6 +103,16 @@ class BenchmarkComparisonTest(unittest.TestCase):
         self.assertEqual(
             {"amd": False, "nvidia": True},
             result["metadata_mismatches"]["interleave_nprobes"],
+        )
+
+    def test_mismatched_recall_sampling_fails(self) -> None:
+        self.nvidia["recall_runs"] = 10
+        result = compare_benchmarks(self.amd, self.nvidia, 0.005)
+
+        self.assertEqual("fail", result["status"])
+        self.assertEqual(
+            {"amd": 1, "nvidia": 10},
+            result["metadata_mismatches"]["recall_runs"],
         )
 
     def test_excluded_nprobe_is_reported_but_does_not_fail(self) -> None:

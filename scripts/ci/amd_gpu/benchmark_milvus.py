@@ -207,6 +207,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Measure one sample per nprobe in each round to remove time-order bias",
     )
+    parser.add_argument(
+        "--recall-runs",
+        type=positive_int,
+        default=1,
+        help="Untimed recall samples per nprobe; one reuses the final timed response",
+    )
     parser.add_argument("--max-train-rows", type=int)
     parser.add_argument("--max-query-rows", type=int)
     parser.add_argument("--keep-collection", action="store_true")
@@ -369,6 +375,21 @@ def benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             latencies: list[float],
             found: list[list[int]],
         ) -> dict[str, Any]:
+            recall_samples = [recall_at_k(found, neighbors, args.k)]
+            if args.recall_runs > 1:
+                recall_samples = []
+                for _ in range(args.recall_runs):
+                    responses, _ = search_sweep(
+                        search_params_by_nprobe[nprobe]
+                    )
+                    recall_ids = [
+                        ids
+                        for response in responses
+                        for ids in search_ids(response)
+                    ]
+                    recall_samples.append(
+                        recall_at_k(recall_ids, neighbors, args.k)
+                    )
             return {
                 "nprobe": nprobe,
                 "warmup_runs": args.warmup_runs,
@@ -376,7 +397,10 @@ def benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                 "qps": median_measurement(qps_samples),
                 "qps_aggregation": "median",
                 "qps_samples": qps_samples,
-                "recall@10": recall_at_k(found, neighbors, args.k),
+                "recall@10": median_measurement(recall_samples),
+                "recall_aggregation": "median",
+                "recall_runs": args.recall_runs,
+                "recall_samples": recall_samples,
                 "p50_batch_ms": statistics.median(latencies),
                 "p99_batch_ms": percentile(latencies, 0.99),
                 "query_batch_size": args.query_batch,
@@ -467,6 +491,8 @@ def benchmark(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         "qps_aggregation": "median",
         "query_batch_size": args.query_batch,
         "interleave_nprobes": args.interleave_nprobes,
+        "recall_aggregation": "median",
+        "recall_runs": args.recall_runs,
         "search_protocol": (
             "rotating-interleaved-nprobe-rounds-full-batch-client-call-v1"
             if args.interleave_nprobes
@@ -501,6 +527,8 @@ def main() -> int:
             "runs": args.runs,
             "query_batch_size": args.query_batch,
             "interleave_nprobes": args.interleave_nprobes,
+            "recall_aggregation": "median",
+            "recall_runs": args.recall_runs,
             "source_provenance": {
                 "status": "fail" if args.require_source_match else "unverified",
                 "requested_commit": os.environ.get("GITHUB_SHA"),

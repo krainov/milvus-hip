@@ -224,7 +224,7 @@ jobs:
         run: |
           nightly_protocol=()
           if (( GIST_BENCHMARK_RUNS >= 1000 )); then
-            nightly_protocol+=(--interleave-nprobes)
+            nightly_protocol+=(--interleave-nprobes --recall-runs 10)
           fi
           "${GPU_BENCH_PYTHON}" scripts/ci/amd_gpu/benchmark_milvus.py \
             --backend amd \
@@ -499,7 +499,7 @@ jobs:
         run: |
           nightly_protocol=()
           if (( GIST_BENCHMARK_RUNS >= 1000 )); then
-            nightly_protocol+=(--interleave-nprobes)
+            nightly_protocol+=(--interleave-nprobes --recall-runs 10)
           fi
           "${GPU_BENCH_PYTHON}" scripts/ci/amd_gpu/benchmark_milvus.py \
             --backend nvidia \

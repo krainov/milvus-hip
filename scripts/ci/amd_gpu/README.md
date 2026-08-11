@@ -46,8 +46,10 @@ build; it does not claim index-build repeatability. QPS measures complete
 the timed region. Nightly samples are interleaved by `nprobe` round, with a
 rotating first point, so gradual runtime stabilization and order effects are
 distributed across the same time window; short pull-request runs remain
-sequential to match the reference harness. A manual 1000-run check can be
-started with the same `gist_runs` workflow input.
+sequential to match the reference harness. Nightly recall is the median of 10
+untimed validation searches per `nprobe`, so a single nondeterministic result
+cannot create a numerical failure. A manual 1000-run check can be started with
+the same `gist_runs` workflow input.
 GIST `GPU_IVF_FLAT` uses the same five-warm-up/10-run protocol in both regular
 and nightly workflows; the 1,000-run nightly series remains specific to
 GIST `GPU_IVF_PQ`. CI starts Milvus with `gpu.initMemSize=0` and

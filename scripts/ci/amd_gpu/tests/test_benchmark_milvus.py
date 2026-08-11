@@ -75,6 +75,9 @@ class BenchmarkRunsTest(unittest.TestCase):
             benchmark,
         )
         self.assertIn("offset = run_index % len(nprobes)", benchmark)
+        self.assertIn(
+            '"recall@10": median_measurement(recall_samples)', benchmark
+        )
 
     def test_workflow_accepts_nightly_gist_run_count(self) -> None:
         workflow = (
@@ -99,6 +102,7 @@ class BenchmarkRunsTest(unittest.TestCase):
             workflow.count('--query-batch "${GIST_BENCHMARK_QUERY_BATCH}"'),
         )
         self.assertEqual(2, workflow.count("--interleave-nprobes"))
+        self.assertEqual(2, workflow.count("--recall-runs 10"))
         self.assertEqual(
             2,
             workflow.count("if (( GIST_BENCHMARK_RUNS >= 1000 )); then"),

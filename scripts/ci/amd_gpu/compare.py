@@ -28,6 +28,8 @@ def benchmark_metadata(payload: dict[str, Any]) -> dict[str, Any]:
             "qps_aggregation",
             "query_batch_size",
             "interleave_nprobes",
+            "recall_aggregation",
+            "recall_runs",
             "search_protocol",
             "dataset_sha256",
         )
