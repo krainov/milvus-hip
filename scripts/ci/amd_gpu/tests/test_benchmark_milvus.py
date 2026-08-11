@@ -75,6 +75,20 @@ class BenchmarkRunsTest(unittest.TestCase):
         )
         self.assertIn("benchmark-amd-gist-ivf-flat.json", workflow)
         self.assertIn("benchmark-nvidia-gist-ivf-flat.json", workflow)
+        self.assertIn('MILVUS_CI_GPU_INIT_MEM_SIZE: "0"', workflow)
+        self.assertIn('MILVUS_CI_GPU_MAX_MEM_SIZE: "0"', workflow)
+
+    def test_ci_milvus_can_use_available_gpu_memory_for_gist_flat(self) -> None:
+        service = (
+            REPOSITORY_ROOT / "scripts/ci/amd_gpu/milvus_service.sh"
+        ).read_text()
+
+        self.assertIn(
+            'GPU_INITMEMSIZE=${MILVUS_CI_GPU_INIT_MEM_SIZE:-2048}', service
+        )
+        self.assertIn(
+            'GPU_MAXMEMSIZE=${MILVUS_CI_GPU_MAX_MEM_SIZE:-4096}', service
+        )
 
     def test_amd_gtests_use_a_pinned_ci_owned_checkout(self) -> None:
         workflow = (

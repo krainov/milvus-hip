@@ -45,7 +45,10 @@ build; it does not claim index-build repeatability. A manual 1000-run check can
 be started with the same `gist_runs` workflow input.
 GIST `GPU_IVF_FLAT` uses the same five-warm-up/10-run protocol in both regular
 and nightly workflows; the 1,000-run nightly series remains specific to
-GIST `GPU_IVF_PQ`.
+GIST `GPU_IVF_PQ`. CI starts Milvus with `gpu.initMemSize=0` and
+`gpu.maxMemSize=0`, the documented auto-sizing mode, because the default
+4,096 MiB pool cannot load the full GIST IVF_FLAT index. GPU isolation keeps
+the auto-sized pool exclusive to the CI process.
 The nightly verdict gates runner/build/source health, shared C API tests, and
 GIST parity. The one-sweep SIFT comparisons remain visible as evidence but are
 non-gating in this mode; ordinary pull request runs continue to gate on them.
