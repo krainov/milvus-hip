@@ -1,0 +1,77 @@
+from __future__ import annotations
+
+import unittest
+
+from scripts.ci.amd_gpu.triage import classify, parse_steps, redact
+
+
+class TriageTest(unittest.TestCase):
+    def test_redacts_known_credentials(self) -> None:
+        text = "Authorization: Bearer abcdefghijklmnop password=secret-value"  # pragma: allowlist secret
+        redacted = redact(text)
+        self.assertNotIn("abcdefghijklmnop", redacted)
+        self.assertNotIn("secret-value", redacted)
+
+    def test_classifies_gpu_contention(self) -> None:
+        matches = classify("GPU has active compute processes")
+        self.assertEqual("gpu_busy", matches[0]["signature"])
+
+    def test_classifies_gpu_contention_from_doctor_summary(self) -> None:
+        matches = classify("[FAIL] gpu-compute-processes")
+        self.assertEqual("gpu_busy", matches[0]["signature"])
+
+    def test_green_doctor_tool_names_are_not_failures(self) -> None:
+        self.assertEqual([], classify("[PASS] hipcc\n[PASS] nvcc\nQPS: 1000"))
+
+    def test_missing_clang_tidy_is_not_a_compile_failure(self) -> None:
+        self.assertEqual([], classify("clang-tidy not found"))
+
+    def test_classifies_hip_backend_on_runner_without_rocm(self) -> None:
+        matches = classify("WITH_HIP: set ROCM_PATH or install ROCm under /opt/rocm")
+        self.assertEqual("hip_backend_missing_rocm", matches[0]["signature"])
+
+    def test_classifies_missing_cmake_package(self) -> None:
+        matches = classify(
+            'Could not find a package configuration file provided by "xxHash"'
+        )
+        self.assertEqual("cmake_package_missing", matches[0]["signature"])
+
+    def test_successful_docker_pull_is_not_a_failure(self) -> None:
+        self.assertEqual([], classify("+ docker pull image\nStatus: up to date"))
+
+    def test_classifies_node_identity_failure(self) -> None:
+        matches = classify(
+            "rpc error: node not match[expectedNodeID=17][actualNodeID=18]"
+        )
+        self.assertEqual("milvus_node_mismatch", matches[0]["signature"])
+
+    def test_classifies_dependency_revision_mismatch(self) -> None:
+        matches = classify(
+            "dependency /opt/knowhere is deadbee, expected 0123456789abcdef"
+        )
+        self.assertEqual("dependency_revision_mismatch", matches[0]["signature"])
+
+    def test_classifies_missing_exact_sut(self) -> None:
+        matches = classify("Exact-SHA Milvus image is missing: milvus-ci:test")
+        self.assertEqual("exact_sut_missing", matches[0]["signature"])
+
+    def test_recall_method_in_shutdown_error_is_not_a_recall_failure(self) -> None:
+        text = (
+            "grpcclient.(*ClientBase).ReCall\\n"
+            "failed to connect: connection refused"
+        )
+        self.assertEqual([], classify(text))
+
+    def test_classifies_explicit_recall_gate_failure(self) -> None:
+        matches = classify("recall@10 delta 0.02 exceeded tolerance 0.005")
+        self.assertEqual("recall_gate", matches[0]["signature"])
+
+    def test_parses_step_outcomes(self) -> None:
+        self.assertEqual(
+            {"build": "success", "benchmark": "failure"},
+            parse_steps(["build=success", "benchmark=failure"]),
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

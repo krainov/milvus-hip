@@ -46,15 +46,43 @@ else ()
     set(WITH_CARDINAL OFF CACHE BOOL "" FORCE )
 endif()
 
-if ( MILVUS_GPU_VERSION STREQUAL "ON" )
-  # NVIDIA path used WITH_RAFT; AMD Layer-3 HIP Knowhere uses WITH_CUVS + WITH_HIP
-  # against prebuilt hipVS/hipRAFT under INSTALL_PREFIX.
+if ( MILVUS_GPU_VERSION )
+  # GPU Knowhere uses cuVS on both backends. HIP is an explicit AMD-only opt-in.
   set(WITH_CUVS ON CACHE BOOL "" FORCE )
-  set(WITH_HIP ON CACHE BOOL "" FORCE )
-  set(WITH_RAFT OFF CACHE BOOL "" FORCE )
-  message(STATUS "MILVUS Layer3 HIP: WITH_CUVS=ON WITH_HIP=ON (hipVS/hipRAFT)")
+  set(_milvus_want_hip OFF)
+  if(DEFINED MILVUS_WITH_HIP AND MILVUS_WITH_HIP)
+    set(_milvus_want_hip ON)
+  elseif(DEFINED ENV{MILVUS_WITH_HIP})
+    string(TOUPPER "$ENV{MILVUS_WITH_HIP}" _milvus_hip_env)
+    if(_milvus_hip_env STREQUAL "1"
+       OR _milvus_hip_env STREQUAL "ON"
+       OR _milvus_hip_env STREQUAL "TRUE"
+       OR _milvus_hip_env STREQUAL "YES")
+      set(_milvus_want_hip ON)
+    endif()
+    unset(_milvus_hip_env)
+  elseif(DEFINED ENV{KNOWHERE_WITH_HIP})
+    string(TOUPPER "$ENV{KNOWHERE_WITH_HIP}" _milvus_hip_env)
+    if(_milvus_hip_env STREQUAL "1"
+       OR _milvus_hip_env STREQUAL "ON"
+       OR _milvus_hip_env STREQUAL "TRUE"
+       OR _milvus_hip_env STREQUAL "YES")
+      set(_milvus_want_hip ON)
+    endif()
+    unset(_milvus_hip_env)
+  endif()
+  set(WITH_HIP ${_milvus_want_hip} CACHE BOOL
+      "Link Knowhere against hipVS/hipRAFT (ROCm); OFF for CUDA" FORCE)
+  if(_milvus_want_hip)
+    set(WITH_RAFT OFF CACHE BOOL "" FORCE )
+    message(STATUS "MILVUS Layer3 HIP: WITH_CUVS=ON WITH_HIP=ON (hipVS/hipRAFT)")
+  else()
+    message(STATUS "MILVUS GPU: WITH_CUVS=ON WITH_HIP=OFF (CUDA)")
+  endif()
+  unset(_milvus_want_hip)
 endif ()
 
+if(WITH_HIP)
 # Prefer hipVS/hipRAFT + ROCm ahead of Conan boost for find_package(cuvs/raft/hip).
 # Do NOT read ENV{INSTALL_PREFIX}: Milvus core_build.sh overwrites it to the Milvus
 # output tree, which hides hipVS/xxHash under ~/rocmds_check_gfx1100/install.
@@ -83,6 +111,9 @@ foreach(_xx_cand
 endforeach()
 message(STATUS "MILVUS Layer3 Knowhere CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}")
 message(STATUS "MILVUS Layer3 Knowhere xxHash_DIR: ${xxHash_DIR}")
+else()
+  set(CMAKE_PREFIX_PATH ${CONAN_BOOST_ROOT})
+endif()
 
 if(DEFINED MILVUS_KNOWHERE_SOURCE_DIR AND EXISTS "${MILVUS_KNOWHERE_SOURCE_DIR}/CMakeLists.txt")
   set(knowhere_SOURCE_DIR "${MILVUS_KNOWHERE_SOURCE_DIR}")

@@ -1,0 +1,839 @@
+name: AMD GPU parity
+
+on:
+  pull_request:
+    branches:
+      - v2.5.4
+  push:
+    branches:
+      - v2.5.4
+  workflow_dispatch:
+    inputs:
+      gist_runs:
+        description: Complete GIST query sweeps per nprobe
+        required: false
+        default: "10"
+
+concurrency:
+  group: amd-gpu-parity-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  PYTHONUNBUFFERED: "1"
+  SIFT1M_SHA256: dd6f0a6ed6b7ebb8934680f861a33ed01ff33991eaee4fd60914d854a0ca5984
+  GIST1M_SHA256: 8e95831936bfdbfa0a56086942e2cf98cd703517c67f985914183eb4cdbf026a
+  GIST_BENCHMARK_RUNS: ${{ github.event_name == 'workflow_dispatch' && inputs.gist_runs || '10' }}
+  GIST_BENCHMARK_WARMUP_RUNS: "5"
+  GIST_BENCHMARK_QUERY_BATCH: "1000"
+  MILVUS_CI_GPU_INIT_MEM_SIZE: "0"
+  MILVUS_CI_GPU_MAX_MEM_SIZE: "0"
+  GPU_RECALL_TOLERANCE: "0.015"
+  NVIDIA_BUILDER_IMAGE: milvusdb/milvus-env:gpu-ubuntu22.04-20240806-d8668fe
+  NVIDIA_BUILDER_DIGEST: sha256:cdf41b4dae81a0ac0cf0efc4ee058dd7298ae6dd7ebd4bdf396a62916513e0a8
+  NVIDIA_RUNTIME_BASE_IMAGE: milvusdb/milvus:v2.5.4-gpu@sha256:1f62c3b4096dfef2ffcf99ca628b9246f02d6c57cef99f0d299c2c8c144c4a3d
+
+defaults:
+  run:
+    shell: bash --noprofile --norc -eo pipefail {0}
+
+jobs:
+  ci-tools:
+    name: Validate GPU CI tools
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Unit tests
+        run: python3 -m unittest discover -s scripts/ci/amd_gpu/tests -v
+
+      - name: Compile Python
+        run: python3 -m compileall -q scripts/ci/amd_gpu
+
+      - name: Scan changed files for credentials
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || github.sha }}
+        run: |
+          if [ -n "${BASE_SHA}" ] && git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            python3 scripts/ci/amd_gpu/secret_scan.py --base "${BASE_SHA}"
+          else
+            python3 scripts/ci/amd_gpu/secret_scan.py
+          fi
+
+  amd:
+    name: AMD gfx1100 evidence
+    needs: ci-tools
+    runs-on: [self-hosted, linux, x64, amd-gpu, gfx1100]
+    timeout-minutes: 360
+    env:
+      GPU_HIP_PREFIX: /home/amd/rocmds_check_gfx1100/install
+      GPU_GTEST_DIR: /home/amd/milvus-ci/hipVS/cpp/build/gtests
+      GPU_LIBRARY_SOURCE_DIR: /home/amd/milvus-ci/hipVS
+      GPU_LIBRARY_COMMIT: 87877f15fe6fdd6525730385e9474117ade6ecb3
+      GPU_KNOWHERE_SOURCE_DIR: /home/amd/milvus-ci/knowhere
+      GPU_KNOWHERE_COMMIT: 78626c87cd2605f0532783848288d2142ab3ab1f
+      GPU_LIBCUVS_SHA256: 3fab5ceb25e6c158f31c3bd3968a512da23e8035f17e4a722a0652d1010b640d
+      MILVUS_GIST_DATASET: /home/amd/milvus-ci/data/gist-960-euclidean.hdf5
+      MILVUS_CI_ROOT: ${{ github.workspace }}
+      MILVUS_CI_BINARY: ${{ github.workspace }}/bin/milvus
+      MILVUS_CI_GRPC_PORT: "29530"
+      MILVUS_CI_INTERNAL_GRPC_PORT: "29529"
+      MILVUS_CI_METRICS_PORT: "29091"
+      MILVUS_CI_HEALTH_URI: http://127.0.0.1:29091/healthz
+      MILVUS_BENCH_URI: http://127.0.0.1:29530
+      MILVUS_METRICS_URI: http://127.0.0.1:29091/metrics
+      MILVUS_CI_PID_FILE: /tmp/milvus-${{ github.run_id }}-${{ github.run_attempt }}-amd.pid
+      MILVUS_CI_LOG_FILE: ${{ github.workspace }}/gpu-evidence/milvus-amd-server.log
+      MILVUS_CI_RUNTIME_DIR: /tmp/milvus-${{ github.run_id }}-${{ github.run_attempt }}-amd
+      MILVUS_CI_ETCD_ROOT_PATH: ci-${{ github.run_id }}-${{ github.run_attempt }}-amd
+      MILVUS_CI_MINIO_ROOT_PATH: ci-${{ github.run_id }}-${{ github.run_attempt }}-amd
+      MILVUS_CI_MINIO_ACCESS_KEY: ${{ secrets.MILVUS_CI_MINIO_ACCESS_KEY }}
+      MILVUS_CI_MINIO_SECRET_KEY: ${{ secrets.MILVUS_CI_MINIO_SECRET_KEY }}
+      MILVUS_CI_MINIO_CLEANUP_IMAGE: minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+      MILVUS_CI_EXTRA_LD_LIBRARY_PATH: /home/amd/rocmds_check_gfx1100/install/lib:/opt/rocm/lib
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          clean: true
+
+      - name: Prepare output
+        run: mkdir -p gpu-evidence
+
+      - name: Isolate GPU
+        id: isolate
+        continue-on-error: true
+        run: |
+          service_rc=0
+          bash scripts/ci/amd_gpu/milvus_service.sh stop \
+            |& tee gpu-evidence/stop-milvus-amd.log || service_rc=$?
+          isolation_rc=0
+          python3 scripts/ci/amd_gpu/gpu_isolation.py \
+            --backend amd \
+            --output gpu-evidence/isolation-amd.json \
+            |& tee gpu-evidence/isolation-amd.log || isolation_rc=$?
+          test "${service_rc}" = 0
+          test "${isolation_rc}" = 0
+
+      - name: Runner Doctor
+        id: doctor
+        continue-on-error: true
+        run: |
+          python3 scripts/ci/amd_gpu/doctor.py \
+            --backend amd \
+            --expected gfx1100 \
+            --require-idle \
+            --output gpu-evidence/doctor-amd.json \
+            |& tee gpu-evidence/doctor-amd.log
+
+      - name: Build AMD Milvus from checkout SHA
+        id: build
+        continue-on-error: true
+        run: |
+          python3 scripts/ci/amd_gpu/build_sut.py \
+            --backend amd \
+            --output gpu-evidence/build-amd.json \
+            |& tee gpu-evidence/build-amd.log
+          grep -F "MILVUS Layer3 HIP: WITH_CUVS=ON WITH_HIP=ON" \
+            gpu-evidence/build-amd.log
+
+      - name: hipVS shared C API gtests
+        id: gtests
+        continue-on-error: true
+        run: |
+          if [ "${{ steps.doctor.outcome }}" != success ]; then
+            python3 scripts/ci/amd_gpu/run_gtests.py \
+              --backend amd \
+              --gtest-dir "${GPU_GTEST_DIR}" \
+              --non-gating-binary CAGRA_C_TEST \
+              --blocked-reason "runner doctor failed; GPU tests were not executed" \
+              --output gpu-evidence/gtest-amd.json \
+              |& tee gpu-evidence/gtest-amd.log
+          else
+            test "$(git -C "${GPU_LIBRARY_SOURCE_DIR}" rev-parse HEAD)" = \
+              "${GPU_LIBRARY_COMMIT}"
+            git -C "${GPU_LIBRARY_SOURCE_DIR}" diff --quiet HEAD --
+            python3 scripts/ci/amd_gpu/run_gtests.py \
+              --backend amd \
+              --gtest-dir "${GPU_GTEST_DIR}" \
+              --non-gating-binary CAGRA_C_TEST \
+              --output gpu-evidence/gtest-amd.json \
+              |& tee gpu-evidence/gtest-amd.log
+          fi
+
+      - name: Start AMD Milvus
+        id: start_milvus
+        if: always()
+        continue-on-error: true
+        run: |
+          test "${{ steps.doctor.outcome }}" = success
+          test "${{ steps.build.outcome }}" = success
+          bash scripts/ci/amd_gpu/milvus_service.sh start \
+            |& tee gpu-evidence/start-milvus-amd.log
+
+      - name: Milvus GPU IVF_FLAT benchmark
+        id: ivf_flat
+        continue-on-error: true
+        run: |
+          "${GPU_BENCH_PYTHON}" scripts/ci/amd_gpu/benchmark_milvus.py \
+            --backend amd \
+            --uri "${MILVUS_BENCH_URI}" \
+            --dataset "${MILVUS_BENCH_DATASET}" \
+            --dataset-id SIFT1M \
+            --expected-dataset-sha256 "${SIFT1M_SHA256}" \
+            --index-type GPU_IVF_FLAT \
+            --nprobe 4 \
+            --nprobe 8 \
+            --nprobe 16 \
+            --nprobe 32 \
+            --max-query-rows 1000 \
+            --require-source-match \
+            --output gpu-evidence/benchmark-amd-ivf-flat.json \
+            |& tee gpu-evidence/benchmark-amd-ivf-flat.log
+
+      - name: Milvus GPU IVF_PQ benchmark
+        id: ivf_pq
+        continue-on-error: true
+        run: |
+          "${GPU_BENCH_PYTHON}" scripts/ci/amd_gpu/benchmark_milvus.py \
+            --backend amd \
+            --uri "${MILVUS_BENCH_URI}" \
+            --dataset "${MILVUS_BENCH_DATASET}" \
+            --dataset-id SIFT1M \
+            --expected-dataset-sha256 "${SIFT1M_SHA256}" \
+            --index-type GPU_IVF_PQ \
+            --m 32 \
+            --nbits 8 \
+            --nprobe 4 \
+            --nprobe 8 \
+            --nprobe 16 \
+            --nprobe 32 \
+            --max-query-rows 1000 \
+            --require-source-match \
+            --output gpu-evidence/benchmark-amd-ivf-pq.json \
+            |& tee gpu-evidence/benchmark-amd-ivf-pq.log
+
+      - name: Milvus GIST-1M GPU IVF_PQ benchmark
+        id: gist_ivf_pq
+        continue-on-error: true
+        run: |
+          nightly_protocol=()
+          if (( GIST_BENCHMARK_RUNS >= 1000 )); then
+            nightly_protocol+=(--interleave-nprobes --recall-runs 10)
+          fi
+          "${GPU_BENCH_PYTHON}" scripts/ci/amd_gpu/benchmark_milvus.py \
+            --backend amd \
+            --uri "${MILVUS_BENCH_URI}" \
+            --dataset "${MILVUS_GIST_DATASET}" \
+            --dataset-id GIST1M \
+            --expected-dataset-sha256 "${GIST1M_SHA256}" \
+            --index-type GPU_IVF_PQ \
+            --nlist 1024 \
+            --m 32 \
+            --nbits 8 \
+            --k 10 \
+            --nprobe 8 \
+            --nprobe 16 \
+            --nprobe 32 \
+            --nprobe 64 \
+            --nprobe 128 \
+            --insert-batch 8000 \
+            --query-batch "${GIST_BENCHMARK_QUERY_BATCH}" \
+            --max-query-rows 1000 \
+            --warmup-runs "${GIST_BENCHMARK_WARMUP_RUNS}" \
+            --runs "${GIST_BENCHMARK_RUNS}" \
+            "${nightly_protocol[@]}" \
+            --require-source-match \
+            --output gpu-evidence/benchmark-amd-gist-ivf-pq.json \
+            |& tee gpu-evidence/benchmark-amd-gist-ivf-pq.log
+
+      - name: Milvus GIST-1M GPU IVF_FLAT benchmark
+        id: gist_ivf_flat
+        continue-on-error: true
+        run: |
+          nightly_protocol=()
+          if (( GIST_BENCHMARK_RUNS >= 1000 )); then
+            nightly_protocol+=(--interleave-nprobes --recall-runs 10)
+          fi
+          "${GPU_BENCH_PYTHON}" scripts/ci/amd_gpu/benchmark_milvus.py \
+            --backend amd \
+            --uri "${MILVUS_BENCH_URI}" \
+            --dataset "${MILVUS_GIST_DATASET}" \
+            --dataset-id GIST1M \
+            --expected-dataset-sha256 "${GIST1M_SHA256}" \
+            --index-type GPU_IVF_FLAT \
+            --nlist 1024 \
+            --k 10 \
+            --nprobe 8 \
+            --nprobe 16 \
+            --nprobe 32 \
+            --nprobe 64 \
+            --nprobe 128 \
+            --insert-batch 8000 \
+            --query-batch "${GIST_BENCHMARK_QUERY_BATCH}" \
+            --max-query-rows 1000 \
+            --warmup-runs "${GIST_BENCHMARK_WARMUP_RUNS}" \
+            --runs "${GIST_BENCHMARK_RUNS}" \
+            "${nightly_protocol[@]}" \
+            --require-source-match \
+            --output gpu-evidence/benchmark-amd-gist-ivf-flat.json \
+            |& tee gpu-evidence/benchmark-amd-gist-ivf-flat.log
+
+      - name: Stop exact-SHA AMD Milvus
+        id: cleanup
+        if: always()
+        continue-on-error: true
+        run: |
+          bash scripts/ci/amd_gpu/milvus_service.sh stop \
+            |& tee gpu-evidence/cleanup-milvus-amd.log
+
+      - name: Deterministic failure triage
+        if: always()
+        run: |
+          cat gpu-evidence/*.log > gpu-evidence/backend-amd.log
+          python3 scripts/ci/amd_gpu/triage.py \
+            --log gpu-evidence/backend-amd.log \
+            --step isolate=${{ steps.isolate.outcome }} \
+            --step doctor=${{ steps.doctor.outcome }} \
+            --step build=${{ steps.build.outcome }} \
+            --step gtests=${{ steps.gtests.outcome }} \
+            --step start-milvus=${{ steps.start_milvus.outcome }} \
+            --step ivf-flat=${{ steps.ivf_flat.outcome }} \
+            --step ivf-pq=${{ steps.ivf_pq.outcome }} \
+            --step gist-ivf-pq=${{ steps.gist_ivf_pq.outcome }} \
+            --step gist-ivf-flat=${{ steps.gist_ivf_flat.outcome }} \
+            --step cleanup=${{ steps.cleanup.outcome }} \
+            --output gpu-evidence/triage-amd.json
+
+      - name: Record AMD job status
+        if: always()
+        run: |
+          python3 scripts/ci/amd_gpu/job_status.py \
+            --backend amd \
+            --step isolate=${{ steps.isolate.outcome }} \
+            --step doctor=${{ steps.doctor.outcome }} \
+            --step build=${{ steps.build.outcome }} \
+            --step gtests=${{ steps.gtests.outcome }} \
+            --step start-milvus=${{ steps.start_milvus.outcome }} \
+            --step ivf-flat=${{ steps.ivf_flat.outcome }} \
+            --step ivf-pq=${{ steps.ivf_pq.outcome }} \
+            --step gist-ivf-pq=${{ steps.gist_ivf_pq.outcome }} \
+            --step gist-ivf-flat=${{ steps.gist_ivf_flat.outcome }} \
+            --step cleanup=${{ steps.cleanup.outcome }} \
+            --output gpu-evidence/job-status-amd.json
+
+      - name: Upload AMD evidence
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: gpu-evidence-amd
+          path: gpu-evidence/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Enforce AMD execution
+        if: always()
+        run: |
+          test "${{ steps.isolate.outcome }}" = success
+          test "${{ steps.doctor.outcome }}" = success
+          test "${{ steps.build.outcome }}" = success
+          test "${{ steps.gtests.outcome }}" = success
+          test "${{ steps.start_milvus.outcome }}" = success
+          test "${{ steps.ivf_flat.outcome }}" = success
+          test "${{ steps.ivf_pq.outcome }}" = success
+          test "${{ steps.gist_ivf_pq.outcome }}" = success
+          test "${{ steps.gist_ivf_flat.outcome }}" = success
+          test "${{ steps.cleanup.outcome }}" = success
+
+  nvidia:
+    name: NVIDIA RTX 4080 evidence
+    needs: ci-tools
+    runs-on: [self-hosted, linux, x64, nvidia-gpu, rtx4080]
+    timeout-minutes: 360
+    env:
+      GPU_BUILD_CACHE_ROOT: /home/kvkol/milvus-ci/build-cache
+      GPU_KNOWHERE_SOURCE_DIR: /home/kvkol/milvus-ci/knowhere
+      GPU_KNOWHERE_COMMIT: 78626c87cd2605f0532783848288d2142ab3ab1f
+      GPU_XXHASH_SOURCE_DIR: /home/kvkol/milvus-ci/xxhash
+      GPU_XXHASH_COMMIT: bbb27a5efb85b92a0486cf361a8635715a53f6ba
+      MILVUS_GIST_DATASET: /home/kvkol/milvus-ci/data/gist-960-euclidean.hdf5
+      MILVUS_CI_IMAGE: milvus-ci-nvidia:${{ github.sha }}
+      MILVUS_CI_CONTAINER: milvus-ci-${{ github.run_id }}-${{ github.run_attempt }}-nvidia
+      MILVUS_CI_GRPC_PORT: "29530"
+      MILVUS_CI_INTERNAL_GRPC_PORT: "29529"
+      MILVUS_CI_METRICS_PORT: "29091"
+      MILVUS_CI_HEALTH_URI: http://127.0.0.1:29091/healthz
+      MILVUS_BENCH_URI: http://127.0.0.1:29530
+      MILVUS_METRICS_URI: http://127.0.0.1:29091/metrics
+      MILVUS_CI_DOCKER_NETWORK: milvus
+      MILVUS_CI_RUNTIME_DIR: /tmp/milvus-${{ github.run_id }}-${{ github.run_attempt }}-nvidia
+      MILVUS_CI_LOG_FILE: ${{ github.workspace }}/gpu-evidence/milvus-nvidia-server.log
+      MILVUS_CI_ETCD_ENDPOINTS: etcd:2379
+      MILVUS_CI_ETCD_ROOT_PATH: ci-${{ github.run_id }}-${{ github.run_attempt }}-nvidia
+      MILVUS_CI_MINIO_ADDRESS: minio:9000
+      MILVUS_CI_MINIO_ROOT_PATH: ci-${{ github.run_id }}-${{ github.run_attempt }}-nvidia
+      MILVUS_CI_MINIO_ACCESS_KEY: ${{ secrets.MILVUS_CI_MINIO_ACCESS_KEY }}
+      MILVUS_CI_MINIO_SECRET_KEY: ${{ secrets.MILVUS_CI_MINIO_SECRET_KEY }}
+      MILVUS_CI_MINIO_CLEANUP_IMAGE: minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          clean: true
+
+      - name: Prepare output
+        run: mkdir -p gpu-evidence
+
+      - name: Isolate GPU
+        id: isolate
+        continue-on-error: true
+        run: |
+          service_rc=0
+          bash scripts/ci/amd_gpu/milvus_service.sh stop \
+            |& tee gpu-evidence/stop-milvus-nvidia.log || service_rc=$?
+          docker image prune --all --force \
+            --filter label=com.dxc.milvus.gpu-ci-image=true \
+            |& tee gpu-evidence/prune-images-before-nvidia.log
+          isolation_rc=0
+          python3 scripts/ci/amd_gpu/gpu_isolation.py \
+            --backend nvidia \
+            --output gpu-evidence/isolation-nvidia.json \
+            |& tee gpu-evidence/isolation-nvidia.log || isolation_rc=$?
+          test "${service_rc}" = 0
+          test "${isolation_rc}" = 0
+
+      - name: Runner Doctor
+        id: doctor
+        continue-on-error: true
+        run: |
+          python3 scripts/ci/amd_gpu/doctor.py \
+            --backend nvidia \
+            --expected "RTX 4080" \
+            --require-idle \
+            --output gpu-evidence/doctor-nvidia.json \
+            |& tee gpu-evidence/doctor-nvidia.log
+
+      - name: Build NVIDIA Milvus from checkout SHA
+        id: build
+        continue-on-error: true
+        run: |
+          python3 scripts/ci/amd_gpu/build_sut.py \
+            --backend nvidia \
+            --output gpu-evidence/build-nvidia.json \
+            |& tee gpu-evidence/build-nvidia.log
+          grep -F "MILVUS GPU: WITH_CUVS=ON WITH_HIP=OFF (CUDA)" \
+            gpu-evidence/build-nvidia.log
+          ! grep -F "WITH_HIP: set ROCM_PATH or install ROCm" \
+            gpu-evidence/build-nvidia.log
+
+      - name: cuVS shared C API gtests
+        id: gtests
+        continue-on-error: true
+        run: |
+          if [ "${{ steps.doctor.outcome }}" != success ]; then
+            python3 scripts/ci/amd_gpu/run_gtests.py \
+              --backend nvidia \
+              --gtest-dir "${GPU_GTEST_DIR}" \
+              --non-gating-binary CAGRA_C_TEST \
+              --blocked-reason "runner doctor failed; GPU tests were not executed" \
+              --output gpu-evidence/gtest-nvidia.json \
+              |& tee gpu-evidence/gtest-nvidia.log
+          else
+            python3 scripts/ci/amd_gpu/run_gtests.py \
+              --backend nvidia \
+              --gtest-dir "${GPU_GTEST_DIR}" \
+              --non-gating-binary CAGRA_C_TEST \
+              --output gpu-evidence/gtest-nvidia.json \
+              |& tee gpu-evidence/gtest-nvidia.log
+          fi
+
+      - name: Start NVIDIA Milvus
+        id: start_milvus
+        if: always()
+        continue-on-error: true
+        run: |
+          test "${{ steps.doctor.outcome }}" = success
+          test "${{ steps.build.outcome }}" = success
+          bash scripts/ci/amd_gpu/milvus_service.sh start \
+            |& tee gpu-evidence/start-milvus-nvidia.log
+
+      - name: Milvus GPU IVF_FLAT benchmark
+        id: ivf_flat
+        continue-on-error: true
+        run: |
+          "${GPU_BENCH_PYTHON}" scripts/ci/amd_gpu/benchmark_milvus.py \
+            --backend nvidia \
+            --uri "${MILVUS_BENCH_URI}" \
+            --dataset "${MILVUS_BENCH_DATASET}" \
+            --dataset-id SIFT1M \
+            --expected-dataset-sha256 "${SIFT1M_SHA256}" \
+            --index-type GPU_IVF_FLAT \
+            --nprobe 4 \
+            --nprobe 8 \
+            --nprobe 16 \
+            --nprobe 32 \
+            --max-query-rows 1000 \
+            --require-source-match \
+            --output gpu-evidence/benchmark-nvidia-ivf-flat.json \
+            |& tee gpu-evidence/benchmark-nvidia-ivf-flat.log
+
+      - name: Milvus GPU IVF_PQ benchmark
+        id: ivf_pq
+        continue-on-error: true
+        run: |
+          "${GPU_BENCH_PYTHON}" scripts/ci/amd_gpu/benchmark_milvus.py \
+            --backend nvidia \
+            --uri "${MILVUS_BENCH_URI}" \
+            --dataset "${MILVUS_BENCH_DATASET}" \
+            --dataset-id SIFT1M \
+            --expected-dataset-sha256 "${SIFT1M_SHA256}" \
+            --index-type GPU_IVF_PQ \
+            --m 32 \
+            --nbits 8 \
+            --nprobe 4 \
+            --nprobe 8 \
+            --nprobe 16 \
+            --nprobe 32 \
+            --max-query-rows 1000 \
+            --require-source-match \
+            --output gpu-evidence/benchmark-nvidia-ivf-pq.json \
+            |& tee gpu-evidence/benchmark-nvidia-ivf-pq.log
+
+      - name: Milvus GIST-1M GPU IVF_PQ benchmark
+        id: gist_ivf_pq
+        continue-on-error: true
+        run: |
+          nightly_protocol=()
+          if (( GIST_BENCHMARK_RUNS >= 1000 )); then
+            nightly_protocol+=(--interleave-nprobes --recall-runs 10)
+          fi
+          "${GPU_BENCH_PYTHON}" scripts/ci/amd_gpu/benchmark_milvus.py \
+            --backend nvidia \
+            --uri "${MILVUS_BENCH_URI}" \
+            --dataset "${MILVUS_GIST_DATASET}" \
+            --dataset-id GIST1M \
+            --expected-dataset-sha256 "${GIST1M_SHA256}" \
+            --index-type GPU_IVF_PQ \
+            --nlist 1024 \
+            --m 32 \
+            --nbits 8 \
+            --k 10 \
+            --nprobe 8 \
+            --nprobe 16 \
+            --nprobe 32 \
+            --nprobe 64 \
+            --nprobe 128 \
+            --insert-batch 8000 \
+            --query-batch "${GIST_BENCHMARK_QUERY_BATCH}" \
+            --max-query-rows 1000 \
+            --warmup-runs "${GIST_BENCHMARK_WARMUP_RUNS}" \
+            --runs "${GIST_BENCHMARK_RUNS}" \
+            "${nightly_protocol[@]}" \
+            --require-source-match \
+            --output gpu-evidence/benchmark-nvidia-gist-ivf-pq.json \
+            |& tee gpu-evidence/benchmark-nvidia-gist-ivf-pq.log
+
+      - name: Milvus GIST-1M GPU IVF_FLAT benchmark
+        id: gist_ivf_flat
+        continue-on-error: true
+        run: |
+          nightly_protocol=()
+          if (( GIST_BENCHMARK_RUNS >= 1000 )); then
+            nightly_protocol+=(--interleave-nprobes --recall-runs 10)
+          fi
+          "${GPU_BENCH_PYTHON}" scripts/ci/amd_gpu/benchmark_milvus.py \
+            --backend nvidia \
+            --uri "${MILVUS_BENCH_URI}" \
+            --dataset "${MILVUS_GIST_DATASET}" \
+            --dataset-id GIST1M \
+            --expected-dataset-sha256 "${GIST1M_SHA256}" \
+            --index-type GPU_IVF_FLAT \
+            --nlist 1024 \
+            --k 10 \
+            --nprobe 8 \
+            --nprobe 16 \
+            --nprobe 32 \
+            --nprobe 64 \
+            --nprobe 128 \
+            --insert-batch 8000 \
+            --query-batch "${GIST_BENCHMARK_QUERY_BATCH}" \
+            --max-query-rows 1000 \
+            --warmup-runs "${GIST_BENCHMARK_WARMUP_RUNS}" \
+            --runs "${GIST_BENCHMARK_RUNS}" \
+            "${nightly_protocol[@]}" \
+            --require-source-match \
+            --output gpu-evidence/benchmark-nvidia-gist-ivf-flat.json \
+            |& tee gpu-evidence/benchmark-nvidia-gist-ivf-flat.log
+
+      - name: Stop exact-SHA NVIDIA Milvus
+        id: cleanup
+        if: always()
+        continue-on-error: true
+        run: |
+          bash scripts/ci/amd_gpu/milvus_service.sh stop \
+            |& tee gpu-evidence/cleanup-milvus-nvidia.log
+          docker image prune --all --force \
+            --filter label=com.dxc.milvus.gpu-ci-image=true \
+            |& tee gpu-evidence/prune-images-after-nvidia.log
+
+      - name: Deterministic failure triage
+        if: always()
+        run: |
+          cat gpu-evidence/*.log > gpu-evidence/backend-nvidia.log
+          python3 scripts/ci/amd_gpu/triage.py \
+            --log gpu-evidence/backend-nvidia.log \
+            --step isolate=${{ steps.isolate.outcome }} \
+            --step doctor=${{ steps.doctor.outcome }} \
+            --step build=${{ steps.build.outcome }} \
+            --step gtests=${{ steps.gtests.outcome }} \
+            --step start-milvus=${{ steps.start_milvus.outcome }} \
+            --step ivf-flat=${{ steps.ivf_flat.outcome }} \
+            --step ivf-pq=${{ steps.ivf_pq.outcome }} \
+            --step gist-ivf-pq=${{ steps.gist_ivf_pq.outcome }} \
+            --step gist-ivf-flat=${{ steps.gist_ivf_flat.outcome }} \
+            --step cleanup=${{ steps.cleanup.outcome }} \
+            --output gpu-evidence/triage-nvidia.json
+
+      - name: Record NVIDIA job status
+        if: always()
+        run: |
+          python3 scripts/ci/amd_gpu/job_status.py \
+            --backend nvidia \
+            --step isolate=${{ steps.isolate.outcome }} \
+            --step doctor=${{ steps.doctor.outcome }} \
+            --step build=${{ steps.build.outcome }} \
+            --step gtests=${{ steps.gtests.outcome }} \
+            --step start-milvus=${{ steps.start_milvus.outcome }} \
+            --step ivf-flat=${{ steps.ivf_flat.outcome }} \
+            --step ivf-pq=${{ steps.ivf_pq.outcome }} \
+            --step gist-ivf-pq=${{ steps.gist_ivf_pq.outcome }} \
+            --step gist-ivf-flat=${{ steps.gist_ivf_flat.outcome }} \
+            --step cleanup=${{ steps.cleanup.outcome }} \
+            --output gpu-evidence/job-status-nvidia.json
+
+      - name: Upload NVIDIA evidence
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: gpu-evidence-nvidia
+          path: gpu-evidence/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Enforce NVIDIA execution
+        if: always()
+        run: |
+          test "${{ steps.isolate.outcome }}" = success
+          test "${{ steps.doctor.outcome }}" = success
+          test "${{ steps.build.outcome }}" = success
+          test "${{ steps.gtests.outcome }}" = success
+          test "${{ steps.start_milvus.outcome }}" = success
+          test "${{ steps.ivf_flat.outcome }}" = success
+          test "${{ steps.ivf_pq.outcome }}" = success
+          test "${{ steps.gist_ivf_pq.outcome }}" = success
+          test "${{ steps.gist_ivf_flat.outcome }}" = success
+          test "${{ steps.cleanup.outcome }}" = success
+
+  parity:
+    name: AMD and NVIDIA correctness verdict
+    if: always() && needs.ci-tools.result == 'success'
+    needs: [ci-tools, amd, nvidia]
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download AMD evidence
+        uses: actions/download-artifact@v3
+        with:
+          name: gpu-evidence-amd
+          path: evidence/amd
+
+      - name: Download NVIDIA evidence
+        uses: actions/download-artifact@v3
+        with:
+          name: gpu-evidence-nvidia
+          path: evidence/nvidia
+
+      - name: Compare shared gtests
+        id: gtests
+        continue-on-error: true
+        run: |
+          python3 scripts/ci/amd_gpu/compare.py \
+            --kind gtest \
+            --amd evidence/amd/gtest-amd.json \
+            --nvidia evidence/nvidia/gtest-nvidia.json \
+            --exclude-binary CAGRA_C_TEST \
+            --output gtest-parity.json \
+            --fail-on-correctness
+
+      - name: Compare IVF_FLAT
+        id: ivf_flat
+        continue-on-error: true
+        run: |
+          python3 scripts/ci/amd_gpu/compare.py \
+            --kind benchmark \
+            --amd evidence/amd/benchmark-amd-ivf-flat.json \
+            --nvidia evidence/nvidia/benchmark-nvidia-ivf-flat.json \
+            --recall-tolerance "${GPU_RECALL_TOLERANCE}" \
+            --output ivf-flat-parity.json \
+            --fail-on-correctness
+
+      - name: Compare IVF_PQ
+        id: ivf_pq
+        continue-on-error: true
+        run: |
+          python3 scripts/ci/amd_gpu/compare.py \
+            --kind benchmark \
+            --amd evidence/amd/benchmark-amd-ivf-pq.json \
+            --nvidia evidence/nvidia/benchmark-nvidia-ivf-pq.json \
+            --recall-tolerance "${GPU_RECALL_TOLERANCE}" \
+            --output ivf-pq-parity.json \
+            --fail-on-correctness
+
+      - name: Compare GIST-1M IVF_PQ
+        id: gist_ivf_pq
+        continue-on-error: true
+        run: |
+          python3 scripts/ci/amd_gpu/compare.py \
+            --kind benchmark \
+            --amd evidence/amd/benchmark-amd-gist-ivf-pq.json \
+            --nvidia evidence/nvidia/benchmark-nvidia-gist-ivf-pq.json \
+            --recall-tolerance "${GPU_RECALL_TOLERANCE}" \
+            --output gist-ivf-pq-parity.json \
+            --fail-on-correctness
+
+      - name: Compare GIST-1M IVF_FLAT
+        id: gist_ivf_flat
+        continue-on-error: true
+        run: |
+          python3 scripts/ci/amd_gpu/compare.py \
+            --kind benchmark \
+            --amd evidence/amd/benchmark-amd-gist-ivf-flat.json \
+            --nvidia evidence/nvidia/benchmark-nvidia-gist-ivf-flat.json \
+            --recall-tolerance "${GPU_RECALL_TOLERANCE}" \
+            --output gist-ivf-flat-parity.json \
+            --fail-on-correctness
+
+      - name: Claude failure triage
+        if: github.event_name != 'pull_request'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || 'claude-opus-5' }}
+        run: |
+          python3 scripts/ci/amd_gpu/claude_agent.py \
+            --task triage \
+            --input evidence/amd/job-status-amd.json \
+            --input evidence/amd/triage-amd.json \
+            --input evidence/nvidia/job-status-nvidia.json \
+            --input evidence/nvidia/triage-nvidia.json \
+            --output claude-triage.json
+
+      - name: Record skipped Claude triage for PR
+        if: github.event_name == 'pull_request'
+        run: |
+          python3 scripts/ci/amd_gpu/claude_agent.py \
+            --task triage \
+            --input evidence/amd/job-status-amd.json \
+            --output claude-triage.json
+
+      - name: Claude benchmark narrator
+        if: github.event_name != 'pull_request'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL || 'claude-opus-5' }}
+        run: |
+          python3 scripts/ci/amd_gpu/claude_agent.py \
+            --task benchmark \
+            --input gtest-parity.json \
+            --input ivf-flat-parity.json \
+            --input ivf-pq-parity.json \
+            --input gist-ivf-pq-parity.json \
+            --input gist-ivf-flat-parity.json \
+            --output claude-benchmark.json
+
+      - name: Record skipped Claude narrator for PR
+        if: github.event_name == 'pull_request'
+        run: |
+          python3 scripts/ci/amd_gpu/claude_agent.py \
+            --task benchmark \
+            --input ivf-flat-parity.json \
+            --input gist-ivf-pq-parity.json \
+            --input gist-ivf-flat-parity.json \
+            --output claude-benchmark.json
+
+      - name: Build evidence pack
+        id: evidence
+        continue-on-error: true
+        run: |
+          scope_args=()
+          if [ "${GIST_BENCHMARK_RUNS}" -ge 1000 ]; then
+            scope_args+=(--non-gating ivf-flat --non-gating ivf-pq)
+          fi
+          python3 scripts/ci/amd_gpu/evidence.py \
+            --run-id "${GITHUB_RUN_ID}" \
+            --commit "${GITHUB_SHA}" \
+            --input amd-job=evidence/amd/job-status-amd.json \
+            --input nvidia-job=evidence/nvidia/job-status-nvidia.json \
+            --input amd-isolation=evidence/amd/isolation-amd.json \
+            --input nvidia-isolation=evidence/nvidia/isolation-nvidia.json \
+            --input amd-doctor=evidence/amd/doctor-amd.json \
+            --input nvidia-doctor=evidence/nvidia/doctor-nvidia.json \
+            --input amd-build=evidence/amd/build-amd.json \
+            --input nvidia-build=evidence/nvidia/build-nvidia.json \
+            --input amd-c-api-gtests=evidence/amd/gtest-amd.json \
+            --input nvidia-c-api-gtests=evidence/nvidia/gtest-nvidia.json \
+            --input amd-ivf-flat=evidence/amd/benchmark-amd-ivf-flat.json \
+            --input nvidia-ivf-flat=evidence/nvidia/benchmark-nvidia-ivf-flat.json \
+            --input amd-ivf-pq=evidence/amd/benchmark-amd-ivf-pq.json \
+            --input nvidia-ivf-pq=evidence/nvidia/benchmark-nvidia-ivf-pq.json \
+            --input amd-gist-ivf-pq=evidence/amd/benchmark-amd-gist-ivf-pq.json \
+            --input nvidia-gist-ivf-pq=evidence/nvidia/benchmark-nvidia-gist-ivf-pq.json \
+            --input amd-gist-ivf-flat=evidence/amd/benchmark-amd-gist-ivf-flat.json \
+            --input nvidia-gist-ivf-flat=evidence/nvidia/benchmark-nvidia-gist-ivf-flat.json \
+            --input amd-triage=evidence/amd/triage-amd.json \
+            --input nvidia-triage=evidence/nvidia/triage-nvidia.json \
+            --input c-api-gtests=gtest-parity.json \
+            --input ivf-flat=ivf-flat-parity.json \
+            --input ivf-pq=ivf-pq-parity.json \
+            --input gist-ivf-pq=gist-ivf-pq-parity.json \
+            --input gist-ivf-flat=gist-ivf-flat-parity.json \
+            --input claude-triage=claude-triage.json \
+            --input claude-benchmark=claude-benchmark.json \
+            "${scope_args[@]}" \
+            --output-dir evidence-pack
+
+      - name: Write job summary
+        if: always()
+        run: cat evidence-pack/README.md >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload parity evidence
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: gpu-parity-evidence
+          path: |
+            evidence-pack/
+            evidence-pack.zip
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Enforce correctness gates
+        if: always()
+        run: |
+          test "${{ steps.gtests.outcome }}" = success
+          if [ "${GIST_BENCHMARK_RUNS}" -lt 1000 ]; then
+            test "${{ steps.ivf_flat.outcome }}" = success
+            test "${{ steps.ivf_pq.outcome }}" = success
+          fi
+          test "${{ steps.gist_ivf_pq.outcome }}" = success
+          test "${{ steps.gist_ivf_flat.outcome }}" = success
+          test "${{ steps.evidence.outcome }}" = success
