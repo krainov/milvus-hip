@@ -9,3 +9,11 @@ nothing here is compiled, packaged or read at runtime.
 - Branch: `test_feature`
 - Base: `v2.5.4` (default branch of this fork)
 - Change type: documentation only
+
+## Checklist
+
+- [x] Branch created from the fork default branch
+- [x] Commits touch documentation only (`docs/*.md`)
+- [x] No changes under `internal/`, `pkg/`, `cmd/`, `client/` or `build/`
+- [ ] Pull request opened against `v2.5.4`
+- [ ] Branch deleted after the workflow check is done
