@@ -206,3 +206,8 @@ Useful entry points (see `docs/` and `scripts/` for details):
 5. For CAGRA compares: unfiltered only on AMD; do not claim filter parity.
 
 Contact / lab reference host: `amd-rx7900xtx` (RX 7900 XTX, gfx1100).
+
+## See also
+
+- [`TEST_FEATURE_NOTES.md`](TEST_FEATURE_NOTES.md) — repository workflow check
+  (documentation only, no effect on the HIP port itself).
