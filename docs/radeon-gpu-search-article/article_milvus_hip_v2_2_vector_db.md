@@ -1,5 +1,12 @@
 ## 2. Choosing a vector database
 
-That choice is [Milvus](https://milvus.io/). It is the most popular open-source vector database for retrieval-augmented generation (RAG) and approximate nearest-neighbour (ANN) search: about 46,000 GitHub stars. On NVIDIA it already has GPU indexes through [Knowhere](https://github.com/milvus-io/knowhere), the search engine inside Milvus. `GPU_IVF_FLAT` keeps full vectors inside inverted-file clusters. `GPU_IVF_PQ` compresses them with product quantization.
+We compared the usual tools against three needs: a client API, collections the database keeps on disk, and GPU nearest-neighbour search.
 
-Other tools existed. [FAISS](https://github.com/facebookresearch/faiss) is a library that runs inside a process, not a database with a server and on-disk collections. [pgvector](https://github.com/pgvector/pgvector) adds vector search to PostgreSQL and runs on the CPU. [Qdrant](https://qdrant.tech/) is another vector database. We chose Milvus for that popularity and for its GPU path: Knowhere calls NVIDIA [cuVS](https://docs.rapids.ai/api/cuvs/stable/). That is the path we needed on the Radeon.
+| Tool | What it is | Fit for this job |
+|------|------------|------------------|
+| [FAISS](https://github.com/facebookresearch/faiss) | ANN library | No server. No database-managed collections. |
+| [pgvector](https://github.com/pgvector/pgvector) | PostgreSQL extension | Search runs on the CPU. |
+| [Qdrant](https://qdrant.tech/) | Vector database | A database, but not the Milvus GPU stack. |
+| [Milvus](https://milvus.io/) | Vector database | GPU indexes through Knowhere, its search engine. About 46,000 GitHub stars. |
+
+We chose Milvus. It is the most popular open-source vector database for retrieval-augmented generation (RAG) and approximate nearest-neighbour (ANN) search. It already ships GPU indexes. We only looked at tools we could run on our own machine.
