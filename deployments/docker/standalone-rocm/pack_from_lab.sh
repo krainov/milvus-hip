@@ -27,6 +27,15 @@ _copy_so() {
   local src="$1"
   local base dest real realbase
   [ -L "${src}" ] || [ -f "${src}" ] || return 0
+  # ROCm's glog + Conan gflags = FlagRegisterer lookup error. Keep glog/gflags
+  # only from the Milvus/Knowhere link (ldd of the binary / output/lib).
+  case "$(basename "${src}")" in
+    libglog.so*|libgflags.so*|libgflags_nothreads.so*)
+      case "${src}" in
+        /opt/rocm/*) return 0 ;;
+      esac
+      ;;
+  esac
   # ldd of files already in context/lib points back here — skip or cp errors
   # "are the same file".
   case "${src}" in
@@ -84,25 +93,32 @@ else
   exit 1
 fi
 
-# hipVS / hipRAFT / Knowhere, plus the host ROCm math libs the July binary
-# was linked against (hipblas, hipsolver, rocblas, ...). Copy the tree, not
-# one SONAME at a time.
+# hipVS / Knowhere / Milvus output (includes the Conan glog/gflags the binary
+# was linked with). Do not glob all of /opt/rocm/lib — that copies LLVM/glog
+# and then glog looks up the wrong gflags (FlagRegisterer).
 for _libdir in \
   "${HIPVS_PREFIX}/lib" \
   "${HIPVS_PREFIX}/lib64" \
   "${MILVUS_DIR}/internal/core/output/lib" \
   "${MILVUS_DIR}/lib" \
-  "${MILVUS_DIR}/internal/core/output/lib64" \
-  /opt/rocm/lib \
-  /opt/rocm/lib64 \
-  /opt/rocm/hip/lib \
-  /opt/rocm/lib/hipblas \
-  /opt/rocm/lib/hipsolver
+  "${MILVUS_DIR}/internal/core/output/lib64"
 do
   if [ -d "${_libdir}" ]; then
     echo "    libs from ${_libdir}"
+    find "${_libdir}" -maxdepth 1 \( -name '*.so' -o -name '*.so.*' \) -print0 2>/dev/null \
+      | while IFS= read -r -d '' _f; do _copy_so "${_f}"; done
+  fi
+done
+
+# Host ROCm math/runtime only (hipblas, hipsolver, rocblas, HIP runtime).
+for _libdir in /opt/rocm/lib /opt/rocm/lib64 /opt/rocm/hip/lib; do
+  if [ -d "${_libdir}" ]; then
+    echo "    ROCm hip/roc from ${_libdir}"
     find "${_libdir}" -maxdepth 2 \( \
-        -name '*.so' -o -name '*.so.*' \
+        -name 'libhip*.so*' -o -name 'libroc*.so*' \
+        -o -name 'libamdhip*.so*' -o -name 'libhsa*.so*' \
+        -o -name 'libhsakmt*.so*' -o -name 'librocm*.so*' \
+        -o -name 'libamd_comgr*.so*' \
       \) -print0 2>/dev/null \
       | while IFS= read -r -d '' _f; do _copy_so "${_f}"; done
   fi
