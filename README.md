@@ -21,11 +21,10 @@ process you build from this tree (Knowhere → hipVS → HIP). The Python API is
 stock [pymilvus](https://github.com/milvus-io/pymilvus). It does not know about
 HIP or this fork. It only talks to whatever Milvus is listening
 (default `127.0.0.1:19530`).
----
 
 ```bash
 pip install pymilvus
----
+```
 
 ## What works on `gfx1100`
 
