@@ -1,0 +1,71 @@
+# From-source builder for Milvus HIP. Hours and multi-GB. Not GitHub-hosted CI.
+# First green public image should still come from pack_from_lab.sh on a known-good
+# lab prefix. This file is the reproducible path.
+#
+#   docker build -f Dockerfile.build -t milvus-hip:v2.5.4-rocm \
+#     --build-arg APPLY_PACKER=1 --build-arg OFFLOAD_ARCH=gfx1100 .
+#
+# Instinct: do not apply the wave32 packer (APPLY_PACKER=0). Untested.
+
+ARG ROCM_IMAGE=rocm/dev-ubuntu-22.04:7.0.2
+FROM ${ROCM_IMAGE} AS build
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      git cmake ninja-build python3 python3-pip python3-venv \
+      build-essential curl wget ca-certificates pkg-config \
+      libssl-dev libcurl4-openssl-dev zlib1g-dev ccache \
+      pkg-config && \
+    rm -rf /var/lib/apt/lists/*
+
+ARG OFFLOAD_ARCH=gfx1100
+ARG APPLY_PACKER=1
+ARG HIPVS_BRANCH=release/rocmds-25.10
+ARG HARNESS_REPO=https://github.com/konkolchin/ann-harness-amd.git
+ARG MILVUS_REPO=https://github.com/krainov/milvus-hip.git
+ARG MILVUS_TAG=v2.5.4
+ARG KNOWHERE_REPO=https://github.com/konkolchin/knowhere-hip.git
+ARG KNOWHERE_TAG=2.5
+
+ENV OFFLOAD_ARCH=${OFFLOAD_ARCH}
+ENV APPLY_PACKER=${APPLY_PACKER}
+ENV HIPVS_BRANCH=${HIPVS_BRANCH}
+ENV HARNESS_REPO=${HARNESS_REPO}
+ENV MILVUS_REPO=${MILVUS_REPO}
+ENV MILVUS_TAG=${MILVUS_TAG}
+ENV KNOWHERE_REPO=${KNOWHERE_REPO}
+ENV KNOWHERE_TAG=${KNOWHERE_TAG}
+ENV WORKDIR=/opt/hip-build
+ENV PATH=/opt/rocm/bin:/opt/rocm/llvm/bin:${PATH}
+
+COPY build_from_source.sh pack_from_lab.sh docker-entrypoint.sh /opt/docker-rocm/
+RUN chmod +x /opt/docker-rocm/*.sh && \
+    bash /opt/docker-rocm/build_from_source.sh
+
+# Runtime — same layout as Dockerfile (bin / configs / lib).
+ARG ROCM_IMAGE=rocm/dev-ubuntu-22.04:7.0.2
+FROM ${ROCM_IMAGE}
+
+ARG TARGETARCH=amd64
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      curl ca-certificates libaio-dev libgomp1 libopenblas-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL -o /tini "https://github.com/krallin/tini/releases/download/v0.19.0/tini-${TARGETARCH}" && \
+    chmod +x /tini
+
+COPY --from=build --chown=root:root /out/bin/ /milvus/bin/
+COPY --from=build --chown=root:root /out/configs/ /milvus/configs/
+COPY --from=build --chown=root:root /out/lib/ /milvus/lib/
+COPY --from=build --chown=root:root /opt/docker-rocm/docker-entrypoint.sh /milvus/docker-entrypoint.sh
+RUN chmod 755 /milvus/bin/milvus /milvus/docker-entrypoint.sh
+
+ENV PATH=/milvus/bin:/opt/rocm/bin:$PATH
+ENV LD_LIBRARY_PATH=/milvus/lib:/opt/rocm/lib:$LD_LIBRARY_PATH
+ENV HIP_VISIBLE_DEVICES=0
+ENV ROCR_VISIBLE_DEVICES=0
+
+ENTRYPOINT ["/milvus/docker-entrypoint.sh"]
+CMD ["milvus", "run", "standalone"]
+WORKDIR /milvus

@@ -1,0 +1,6 @@
+volumes
+context
+.git
+*.md
+build_rocm_image.sh
+smoke.sh

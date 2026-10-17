@@ -25,10 +25,13 @@ HIP or this fork. It only talks to whatever Milvus is listening
 ```bash
 pip install pymilvus
 ```
+
 `19530` is the default gRPC port of a running Milvus standalone.
-Build this tree first (see below). Then start standalone the same way as
-official Milvus (`./bin/milvus run standalone` plus etcd and MinIO, or the
-harness start script). Do not use the official GPU Docker image; that is CUDA.
+Build this tree first (see below), **or** start the ROCm compose image
+([`deployments/docker/standalone-rocm`](deployments/docker/standalone-rocm/README.md)).
+The official `milvusdb/milvus` GPU image is CUDA. It does not give GPU search
+on a Radeon. Stop any leftover `milvus-standalone` container first — it can
+load the wrong `libcuvs`.
 
 When the server is up:
 
@@ -36,6 +39,18 @@ When the server is up:
 from pymilvus import connections
 connections.connect(host="127.0.0.1", port="19530")
 ```
+
+```bash
+# On the AMD host, after a Layer-3 lab build (see standalone-rocm/README.md)
+docker rm -f milvus-standalone 2>/dev/null || true
+cd deployments/docker/standalone-rocm
+bash build_rocm_image.sh pack
+docker compose up -d
+bash smoke.sh
+```
+
+Do not push a public image tag until `smoke.sh` is green on a Radeon.
+
 ---
 
 ## Indexes
