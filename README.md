@@ -26,13 +26,28 @@ HIP or this fork. It only talks to whatever Milvus is listening
 pip install pymilvus
 ```
 
-## What works on `gfx1100`
+---
+
+## Indexes
 
 | Index | Status | Notes |
 |-------|--------|--------|
-| `GPU_IVF_FLAT` | Supported | Sealed GPU path; recall OK in harness |
-| `GPU_IVF_PQ` | Supported | Correct recall; often slower than CUDA on peer GPUs |
-| `GPU_CAGRA` | **Unfiltered search only** | Use `build_algo=NN_DESCENT`. Filtering / deletes / bitset: **not supported** on this GPU today |
+| `GPU_IVF_FLAT` | Supported | Validated on RX 7900 XTX (`gfx1100`) |
+| `GPU_IVF_PQ` | Supported | Validated on RX 7900 XTX (`gfx1100`) |
+| `GPU_CAGRA` | Unfiltered search only | Use `build_algo=NN_DESCENT` on the validated Radeon path. hipVS CAGRA search with a bitset (filters, deletes, TTL) is not supported in this port. Prefer IVF if you need that. |
+
+### Which GPU
+
+This tree is a HIP port of Milvus. The same software line is meant for AMD GPUs.
+We validated it on an RX 7900 XTX (`gfx1100`). We have not tested Instinct.
+
+The IVF packer patch is for **wavefront 32** only. Instinct GPUs use wavefront 64.
+Do not apply that patch there.
+
+| GPU | Wavefront | What to do |
+|-----|-----------|------------|
+| Radeon RX 7900 XTX (`gfx1100`) | 32 (this port) | Apply the harness IVF packer patch. This is the validated path. |
+| Instinct MI200 / MI300 (`gfx90a` / `gfx942`) | 64 | Do not apply our hipVS packer patch. hipVS already targets Instinct. This Milvus tree is untested on Instinct. |
 
 ### CAGRA — unfiltered only
 
@@ -47,13 +62,11 @@ index_params = {
     "params": {
         "graph_degree": 32,
         "intermediate_graph_degree": 64,
-        "build_algo": "NN_DESCENT",  # required on gfx1100
+        "build_algo": "NN_DESCENT",  # required on the validated gfx1100 path
     },
 }
 # Search with no filter expression. Avoid delete()/TTL while validating CAGRA.
 ```
-
-Confirm sealed GPU path in logs (`GPU_CUVS_CAGRA` / CAGRA), not a CPU fallback.
 
 ---
 
@@ -140,7 +153,7 @@ Honest expectations from lab (peer GPUs, not identical silicon):
 - **IVF_FLAT:** strong / usable on AMD  
 - **IVF_PQ:** correct recall; often behind CUDA on product and library paths  
 - **CAGRA (unfiltered):** works  
-- **CAGRA (filtered):** out of scope on `gfx1100`
+- **CAGRA (filtered):** out of scope (hipVS bitset path)
 
 ---
 
