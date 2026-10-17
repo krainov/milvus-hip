@@ -72,17 +72,47 @@ do
   fi
 done
 
-# Transitive NEEDED entries of the milvus binary (skip glibc / ROCm already in the base image).
-if command -v ldd >/dev/null; then
+# Copy shared libs the binary actually needs. The July host ROCm SONAMEs
+# (e.g. libhipblas.so.3) are often missing from rocm/dev-ubuntu Docker tags,
+# so do not skip /opt/rocm — only skip glibc/libstdc++ from the Ubuntu image.
+_skip_so() {
+  case "$1" in
+    */ld-linux*|*/linux-vdso*|*/libc.so*|*/libm.so*|*/libpthread.so*|*/libdl.so*|*/librt.so*|*/libresolv.so*|*/libgcc_s.so*|*/libstdc++.so*)
+      return 0 ;;
+  esac
+  return 1
+}
+
+_copy_ldd() {
+  local target="$1"
+  command -v ldd >/dev/null || return 0
+  local _so
   while IFS= read -r _so; do
     [ -z "${_so}" ] && continue
-    case "${_so}" in
-      /lib/*|/lib64/*|/usr/lib/*|/usr/lib64/*|/opt/rocm/*) continue ;;
-    esac
+    _skip_so "${_so}" && continue
     if [ -f "${_so}" ]; then
-      cp -a "${_so}" "${CTX}/lib/" || true
+      cp -a "${_so}" "${CTX}/lib/" 2>/dev/null || true
     fi
-  done < <(ldd "${CTX}/bin/milvus" 2>/dev/null | awk '/=> \// {print $3} /^\// {print $1}')
+  done < <(ldd "${target}" 2>/dev/null | awk '/=> \// {print $3} /^\// {print $1}')
+}
+
+_copy_ldd "${CTX}/bin/milvus"
+# hipblas pulls rocblas etc.; walk libs already in the context a couple of times.
+for _pass in 1 2 3; do
+  find "${CTX}/lib" -maxdepth 1 \( -name '*.so' -o -name '*.so.*' \) -print0 2>/dev/null \
+    | while IFS= read -r -d '' _lib; do
+        _copy_ldd "${_lib}"
+      done
+done
+
+if command -v ldd >/dev/null; then
+  _missing="$(ldd "${CTX}/bin/milvus" 2>/dev/null | grep 'not found' || true)"
+  # Re-check with packed lib dir first, like the container LD_LIBRARY_PATH.
+  _missing="$(LD_LIBRARY_PATH="${CTX}/lib:${LD_LIBRARY_PATH:-}" ldd "${CTX}/bin/milvus" 2>/dev/null | grep 'not found' || true)"
+  if [ -n "${_missing}" ]; then
+    echo "WARNING: still unresolved after pack:" >&2
+    echo "${_missing}" >&2
+  fi
 fi
 
 cp -a "${SCRIPT_DIR}/docker-entrypoint.sh" "${CTX}/docker-entrypoint.sh"
