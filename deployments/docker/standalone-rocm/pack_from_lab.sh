@@ -16,18 +16,28 @@ MILVUS_DIR="${MILVUS_DIR:-${WORKDIR}/milvus}"
 CTX="${CTX:-${SCRIPT_DIR}/context}"
 IMAGE="${MILVUS_HIP_IMAGE:-milvus-hip:v2.5.4-rocm}"
 
-mkdir -p "${CTX}/bin" "${CTX}/configs" "${CTX}/lib"
+mkdir -p "${CTX}/bin" "${CTX}/configs"
+# Drop stale broken links (libhipblas.so.3 -> libhipblas.so.3.0.70002 with no target).
+rm -rf "${CTX}/lib"
+mkdir -p "${CTX}/lib"
 
-# Follow symlinks: Docker COPY keeps a link to /opt/rocm/... which is missing
-# in the container (libhipblas.so.3 -> /opt/rocm/lib/...).
+# Copy the real ELF and the SONAME the binary asks for (libhipblas.so.3).
+# Do not use [ -e ] on the source: that is false for a dangling symlink.
 _copy_so() {
   local src="$1"
-  [ -e "${src}" ] || return 0
-  local dest="${CTX}/lib/$(basename "${src}")"
-  if [ -L "${src}" ]; then
-    cp -L "${src}" "${dest}" 2>/dev/null || cp -L "$(readlink -f "${src}")" "${dest}"
-  else
-    cp -L "${src}" "${dest}" 2>/dev/null || cp -a "${src}" "${dest}"
+  local base dest real realbase
+  [ -L "${src}" ] || [ -f "${src}" ] || return 0
+  base="$(basename "${src}")"
+  dest="${CTX}/lib/${base}"
+  real="$(readlink -f "${src}" 2>/dev/null || true)"
+  if [ -z "${real}" ] || [ ! -f "${real}" ]; then
+    echo "WARNING: cannot resolve ${src}" >&2
+    return 0
+  fi
+  realbase="$(basename "${real}")"
+  cp -f "${real}" "${CTX}/lib/${realbase}"
+  if [ "${realbase}" != "${base}" ]; then
+    cp -f "${real}" "${dest}"
   fi
 }
 
