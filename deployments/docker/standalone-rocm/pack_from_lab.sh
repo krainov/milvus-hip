@@ -74,17 +74,26 @@ else
   exit 1
 fi
 
-# hipVS / hipRAFT / Knowhere shared libs from the HIP prefix.
+# hipVS / hipRAFT / Knowhere, plus the host ROCm math libs the July binary
+# was linked against (hipblas, hipsolver, rocblas, ...). Copy the tree, not
+# one SONAME at a time.
 for _libdir in \
   "${HIPVS_PREFIX}/lib" \
   "${HIPVS_PREFIX}/lib64" \
   "${MILVUS_DIR}/internal/core/output/lib" \
   "${MILVUS_DIR}/lib" \
-  "${MILVUS_DIR}/internal/core/output/lib64"
+  "${MILVUS_DIR}/internal/core/output/lib64" \
+  /opt/rocm/lib \
+  /opt/rocm/lib64 \
+  /opt/rocm/hip/lib \
+  /opt/rocm/lib/hipblas \
+  /opt/rocm/lib/hipsolver
 do
   if [ -d "${_libdir}" ]; then
     echo "    libs from ${_libdir}"
-    find "${_libdir}" -maxdepth 1 \( -name '*.so' -o -name '*.so.*' \) -print0 \
+    find "${_libdir}" -maxdepth 2 \( \
+        -name '*.so' -o -name '*.so.*' \
+      \) -print0 2>/dev/null \
       | while IFS= read -r -d '' _f; do _copy_so "${_f}"; done
   fi
 done
@@ -114,22 +123,44 @@ _copy_ldd() {
 }
 
 _copy_ldd "${CTX}/bin/milvus"
-# hipblas pulls rocblas etc.; walk libs already in the context a couple of times.
-for _pass in 1 2 3; do
+
+_resolve_missing() {
+  local name src
+  name="$1"
+  src="$(ldconfig -p 2>/dev/null | awk -v n="${name}" '$1 == n {print $NF; exit}')"
+  if [ -z "${src}" ] || [ ! -e "${src}" ]; then
+    src="$(find /opt/rocm /opt/rocm-* "${HIPVS_PREFIX}" "${WORKDIR}/install" \
+      /usr/lib /usr/lib64 /usr/lib/x86_64-linux-gnu \
+      -name "${name}" -o -name "${name}.*" 2>/dev/null | head -1)"
+  fi
+  if [ -n "${src}" ]; then
+    echo "    resolve ${name} <- ${src}"
+    _copy_so "${src}"
+  fi
+}
+
+for _pass in 1 2 3 4 5 6; do
   find "${CTX}/lib" -maxdepth 1 \( -name '*.so' -o -name '*.so.*' \) -print0 2>/dev/null \
     | while IFS= read -r -d '' _lib; do
         _copy_ldd "${_lib}"
       done
+  _missing="$(LD_LIBRARY_PATH="${CTX}/lib" ldd "${CTX}/bin/milvus" 2>/dev/null | awk '/not found/ {print $1}')"
+  if [ -z "${_missing}" ]; then
+    echo "==> ldd clean (pass ${_pass})"
+    break
+  fi
+  echo "==> still missing (pass ${_pass}): ${_missing}"
+  for _n in ${_missing}; do
+    _resolve_missing "${_n}"
+  done
 done
 
-if command -v ldd >/dev/null; then
-  _missing="$(ldd "${CTX}/bin/milvus" 2>/dev/null | grep 'not found' || true)"
-  # Re-check with packed lib dir first, like the container LD_LIBRARY_PATH.
-  _missing="$(LD_LIBRARY_PATH="${CTX}/lib:${LD_LIBRARY_PATH:-}" ldd "${CTX}/bin/milvus" 2>/dev/null | grep 'not found' || true)"
-  if [ -n "${_missing}" ]; then
-    echo "WARNING: still unresolved after pack:" >&2
-    echo "${_missing}" >&2
-  fi
+_missing="$(LD_LIBRARY_PATH="${CTX}/lib" ldd "${CTX}/bin/milvus" 2>/dev/null | grep 'not found' || true)"
+if [ -n "${_missing}" ]; then
+  echo "ERROR: milvus still has unresolved libs after pack:" >&2
+  echo "${_missing}" >&2
+  echo "  Host check: ldd ${CTX}/bin/milvus | grep not" >&2
+  exit 1
 fi
 
 cp -a "${SCRIPT_DIR}/docker-entrypoint.sh" "${CTX}/docker-entrypoint.sh"
