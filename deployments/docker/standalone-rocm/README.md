@@ -20,7 +20,8 @@ docker rm -f milvus-standalone 2>/dev/null || true
 cd deployments/docker/standalone-rocm
 bash pack_from_lab.sh          # or: bash build_rocm_image.sh pack
 docker build -t milvus-hip:v2.5.4-rocm context/
-docker-compose -f docker-compose.yml up -d
+# apt docker-compose 1.x hits KeyError: ContainerConfig on this image — use up.sh
+bash up.sh
 bash smoke.sh
 ```
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Lab gate before any public image tag.
-# Run on the AMD host after: docker compose -f docker-compose.yml up -d
+# Run on the AMD host after: bash up.sh
 #
 #   bash deployments/docker/standalone-rocm/smoke.sh
 #   HARNESS_DIR=~/ann-harness-amd bash .../smoke.sh

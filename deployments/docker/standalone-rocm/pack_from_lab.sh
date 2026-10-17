@@ -127,6 +127,6 @@ if [ "${DOCKER_BUILD:-0}" = "1" ]; then
 else
   echo "Next (from this directory):"
   echo "  docker build -t ${IMAGE} context/"
-  echo "  docker-compose -f docker-compose.yml up -d"
-  echo "  # or: docker compose -f docker-compose.yml up -d"
+  echo "  bash up.sh"
+  echo "  bash smoke.sh"
 fi
