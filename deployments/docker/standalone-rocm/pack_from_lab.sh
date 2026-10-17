@@ -27,6 +27,11 @@ _copy_so() {
   local src="$1"
   local base dest real realbase
   [ -L "${src}" ] || [ -f "${src}" ] || return 0
+  # ldd of files already in context/lib points back here — skip or cp errors
+  # "are the same file".
+  case "${src}" in
+    "${CTX}/lib"/*|"${CTX}/lib/"*) return 0 ;;
+  esac
   base="$(basename "${src}")"
   dest="${CTX}/lib/${base}"
   real="$(readlink -f "${src}" 2>/dev/null || true)"
@@ -34,9 +39,14 @@ _copy_so() {
     echo "WARNING: cannot resolve ${src}" >&2
     return 0
   fi
+  case "${real}" in
+    "${CTX}/lib"/*) return 0 ;;
+  esac
   realbase="$(basename "${real}")"
-  cp -f "${real}" "${CTX}/lib/${realbase}"
-  if [ "${realbase}" != "${base}" ]; then
+  if [ ! "${real}" -ef "${CTX}/lib/${realbase}" ] 2>/dev/null; then
+    cp -f "${real}" "${CTX}/lib/${realbase}"
+  fi
+  if [ "${realbase}" != "${base}" ] && [ ! "${real}" -ef "${dest}" ] 2>/dev/null; then
     cp -f "${real}" "${dest}"
   fi
 }
