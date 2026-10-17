@@ -12,7 +12,7 @@ This is **not** upstream [milvus-io/milvus](https://github.com/milvus-io/milvus)
 | **Knowhere (required)** | https://github.com/konkolchin/knowhere-hip | `2.5` |
 | **Bench / build harness** | https://github.com/konkolchin/ann-harness-amd | `master` |
 | **hipVS / hipRAFT** | Upstream [ROCm-DS/hipVS](https://github.com/ROCm-DS/hipVS) + [hipRaft](https://github.com/ROCm-DS/hipRaft) | e.g. `release/rocmds-25.10` + gfx1100 IVF packer patch (see harness) |
----
+
 
 ## Client vs this server
 
