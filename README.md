@@ -12,7 +12,18 @@ This is **not** upstream [milvus-io/milvus](https://github.com/milvus-io/milvus)
 | **Knowhere (required)** | https://github.com/konkolchin/knowhere-hip | `2.5` |
 | **Bench / build harness** | https://github.com/konkolchin/ann-harness-amd | `master` |
 | **hipVS / hipRAFT** | Upstream [ROCm-DS/hipVS](https://github.com/ROCm-DS/hipVS) + [hipRaft](https://github.com/ROCm-DS/hipRaft) | e.g. `release/rocmds-25.10` + gfx1100 IVF packer patch (see harness) |
+---
 
+## Client vs this server
+
+This repo is the **Milvus server**, not a pip package. GPU search runs in the
+process you build from this tree (Knowhere → hipVS → HIP). The Python API is
+stock [pymilvus](https://github.com/milvus-io/pymilvus). It does not know about
+HIP or this fork. It only talks to whatever Milvus is listening
+(default `127.0.0.1:19530`).
+
+```bash
+pip install pymilvus
 ---
 
 ## What works on `gfx1100`
