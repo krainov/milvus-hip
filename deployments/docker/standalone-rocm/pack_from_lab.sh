@@ -88,13 +88,15 @@ fi
 cp -a "${SCRIPT_DIR}/docker-entrypoint.sh" "${CTX}/docker-entrypoint.sh"
 chmod 755 "${CTX}/docker-entrypoint.sh"
 
+cp -a "${SCRIPT_DIR}/Dockerfile" "${CTX}/Dockerfile"
 echo "==> packed $(find "${CTX}/lib" -type f | wc -l) library files"
 if [ "${DOCKER_BUILD:-0}" = "1" ]; then
   echo "==> docker build ${IMAGE}"
-  docker build -f "${SCRIPT_DIR}/Dockerfile" -t "${IMAGE}" "${CTX}"
+  docker build -t "${IMAGE}" "${CTX}"
   echo "    tagged ${IMAGE}"
 else
-  echo "Next:"
-  echo "  docker build -f ${SCRIPT_DIR}/Dockerfile -t ${IMAGE} ${CTX}"
-  echo "  docker compose -f ${SCRIPT_DIR}/docker-compose.yml up -d"
+  echo "Next (from this directory):"
+  echo "  docker build -t ${IMAGE} context/"
+  echo "  docker-compose -f docker-compose.yml up -d"
+  echo "  # or: docker compose -f docker-compose.yml up -d"
 fi

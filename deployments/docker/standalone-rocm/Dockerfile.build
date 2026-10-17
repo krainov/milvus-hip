@@ -55,10 +55,10 @@ RUN apt-get update && \
 RUN curl -fsSL -o /tini "https://github.com/krallin/tini/releases/download/v0.19.0/tini-${TARGETARCH}" && \
     chmod +x /tini
 
-COPY --from=build --chown=root:root /out/bin/ /milvus/bin/
-COPY --from=build --chown=root:root /out/configs/ /milvus/configs/
-COPY --from=build --chown=root:root /out/lib/ /milvus/lib/
-COPY --from=build --chown=root:root /opt/docker-rocm/docker-entrypoint.sh /milvus/docker-entrypoint.sh
+COPY --from=build /out/bin/ /milvus/bin/
+COPY --from=build /out/configs/ /milvus/configs/
+COPY --from=build /out/lib/ /milvus/lib/
+COPY --from=build /opt/docker-rocm/docker-entrypoint.sh /milvus/docker-entrypoint.sh
 RUN chmod 755 /milvus/bin/milvus /milvus/docker-entrypoint.sh
 
 ENV PATH=/milvus/bin:/opt/rocm/bin:$PATH

@@ -21,11 +21,12 @@ RUN apt-get update && \
 RUN curl -fsSL -o /tini "https://github.com/krallin/tini/releases/download/v0.19.0/tini-${TARGETARCH}" && \
     chmod +x /tini
 
-COPY --chown=root:root --chmod=755 ./bin/ /milvus/bin/
-COPY --chown=root:root --chmod=644 ./configs/ /milvus/configs/
-COPY --chown=root:root --chmod=755 ./lib/ /milvus/lib/
-
-COPY --chown=root:root --chmod=755 ./docker-entrypoint.sh /milvus/docker-entrypoint.sh
+COPY ./bin/ /milvus/bin/
+COPY ./configs/ /milvus/configs/
+COPY ./lib/ /milvus/lib/
+COPY ./docker-entrypoint.sh /milvus/docker-entrypoint.sh
+RUN chmod 755 /milvus/bin/milvus /milvus/docker-entrypoint.sh && \
+    find /milvus/lib -type f -exec chmod a+rX {} +
 
 ENV PATH=/milvus/bin:/opt/rocm/bin:$PATH
 ENV LD_LIBRARY_PATH=/milvus/lib:/opt/rocm/lib:$LD_LIBRARY_PATH

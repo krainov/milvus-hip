@@ -19,7 +19,8 @@ docker rm -f milvus-standalone 2>/dev/null || true
 
 cd deployments/docker/standalone-rocm
 bash pack_from_lab.sh          # or: bash build_rocm_image.sh pack
-docker compose up -d
+docker build -t milvus-hip:v2.5.4-rocm context/
+docker-compose -f docker-compose.yml up -d
 bash smoke.sh
 ```
 
