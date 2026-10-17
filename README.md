@@ -25,7 +25,16 @@ HIP or this fork. It only talks to whatever Milvus is listening
 ```bash
 pip install pymilvus
 ```
+`19530` is the default gRPC port of a running Milvus standalone.
+Build this tree first (see below). Then start standalone the same way as
+official Milvus (`./bin/milvus run standalone` plus etcd and MinIO, or the
+harness start script). Do not use the official GPU Docker image; that is CUDA.
 
+When the server is up:
+
+```python
+from pymilvus import connections
+connections.connect(host="127.0.0.1", port="19530")
 ---
 
 ## Indexes
