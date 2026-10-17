@@ -18,10 +18,16 @@ IMAGE="${MILVUS_HIP_IMAGE:-milvus-hip:v2.5.4-rocm}"
 
 mkdir -p "${CTX}/bin" "${CTX}/configs" "${CTX}/lib"
 
-copy_file() {
-  local src="$1" dest="$2"
-  if [ -e "${src}" ]; then
-    cp -a "${src}" "${dest}"
+# Follow symlinks: Docker COPY keeps a link to /opt/rocm/... which is missing
+# in the container (libhipblas.so.3 -> /opt/rocm/lib/...).
+_copy_so() {
+  local src="$1"
+  [ -e "${src}" ] || return 0
+  local dest="${CTX}/lib/$(basename "${src}")"
+  if [ -L "${src}" ]; then
+    cp -L "${src}" "${dest}" 2>/dev/null || cp -L "$(readlink -f "${src}")" "${dest}"
+  else
+    cp -L "${src}" "${dest}" 2>/dev/null || cp -a "${src}" "${dest}"
   fi
 }
 
@@ -68,7 +74,8 @@ for _libdir in \
 do
   if [ -d "${_libdir}" ]; then
     echo "    libs from ${_libdir}"
-    find "${_libdir}" -maxdepth 1 \( -name '*.so' -o -name '*.so.*' \) -exec cp -a {} "${CTX}/lib/" \;
+    find "${_libdir}" -maxdepth 1 \( -name '*.so' -o -name '*.so.*' \) -print0 \
+      | while IFS= read -r -d '' _f; do _copy_so "${_f}"; done
   fi
 done
 
@@ -90,8 +97,8 @@ _copy_ldd() {
   while IFS= read -r _so; do
     [ -z "${_so}" ] && continue
     _skip_so "${_so}" && continue
-    if [ -f "${_so}" ]; then
-      cp -a "${_so}" "${CTX}/lib/" 2>/dev/null || true
+    if [ -e "${_so}" ]; then
+      _copy_so "${_so}"
     fi
   done < <(ldd "${target}" 2>/dev/null | awk '/=> \// {print $3} /^\// {print $1}')
 }
@@ -119,6 +126,11 @@ cp -a "${SCRIPT_DIR}/docker-entrypoint.sh" "${CTX}/docker-entrypoint.sh"
 chmod 755 "${CTX}/docker-entrypoint.sh"
 
 cp -a "${SCRIPT_DIR}/Dockerfile" "${CTX}/Dockerfile"
+_nlink="$(find "${CTX}/lib" -maxdepth 1 -type l | wc -l)"
+if [ "${_nlink}" != "0" ]; then
+  echo "WARNING: ${_nlink} symlinks still in context/lib (Docker will not follow host /opt/rocm):" >&2
+  find "${CTX}/lib" -maxdepth 1 -type l >&2
+fi
 echo "==> packed $(find "${CTX}/lib" -type f | wc -l) library files"
 if [ "${DOCKER_BUILD:-0}" = "1" ]; then
   echo "==> docker build ${IMAGE}"
