@@ -35,6 +35,7 @@ When the server is up:
 ```python
 from pymilvus import connections
 connections.connect(host="127.0.0.1", port="19530")
+```
 ---
 
 ## Indexes
