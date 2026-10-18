@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Tag the local HIP image and push to GHCR. Run on the AMD box that built it.
 #
-#   export GHCR_TOKEN=ghp_...   # PAT with write:packages, user krainov
+#   export GHCR_TOKEN=ghp_...   # PAT with write:packages, user konkolchin
 #   bash deployments/docker/standalone-rocm/push_ghcr.sh
 set -euo pipefail
 
 LOCAL="${MILVUS_HIP_IMAGE:-milvus-hip:v2.5.4-rocm}"
-USER_NAME="${GHCR_USER:-krainov}"
+USER_NAME="${GHCR_USER:-konkolchin}"
 REMOTE="${MILVUS_HIP_GHCR:-ghcr.io/${USER_NAME}/milvus-hip:v2.5.4-rocm}"
 
 if ! docker image inspect "${LOCAL}" >/dev/null 2>&1; then

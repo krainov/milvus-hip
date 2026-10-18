@@ -33,7 +33,7 @@ The official `milvusdb/milvus` GPU image is CUDA. It does not give GPU search
 on a Radeon. Stop any leftover `milvus-standalone` container first — it can
 load the wrong `libcuvs`.
 
-**Docker image** `ghcr.io/krainov/milvus-hip:v2.5.4-rocm`: Milvus v2.5.4,
+**Docker image** `ghcr.io/konkolchin/milvus-hip:v2.5.4-rocm`: Milvus v2.5.4,
 RX 7900 XTX (`gfx1100`). **`GPU_IVF_FLAT` verified** (sealed `GPU_CUVS_IVF_FLAT`,
 slice-exact recall@10 = 1.0 at nprobe 128). **`GPU_IVF_PQ`, `GPU_CAGRA`, and
 Instinct are not claimed** for this image.
@@ -46,10 +46,10 @@ connections.connect(host="127.0.0.1", port="19530")
 ```
 
 ```bash
-docker pull ghcr.io/krainov/milvus-hip:v2.5.4-rocm
+docker pull ghcr.io/konkolchin/milvus-hip:v2.5.4-rocm
 docker rm -f milvus-standalone 2>/dev/null || true
 cd deployments/docker/standalone-rocm
-export MILVUS_HIP_IMAGE=ghcr.io/krainov/milvus-hip:v2.5.4-rocm
+export MILVUS_HIP_IMAGE=ghcr.io/konkolchin/milvus-hip:v2.5.4-rocm
 bash up.sh
 bash smoke.sh
 ```

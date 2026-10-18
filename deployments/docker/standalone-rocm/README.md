@@ -8,7 +8,7 @@ port **19530**. There is no HIP build of pymilvus.
 
 ## What this image claims
 
-Image: `ghcr.io/krainov/milvus-hip:v2.5.4-rocm`
+Image: `ghcr.io/konkolchin/milvus-hip:v2.5.4-rocm`
 
 | Claim | Status |
 |-------|--------|
@@ -22,11 +22,11 @@ Image: `ghcr.io/krainov/milvus-hip:v2.5.4-rocm`
 ## Pull and run (AMD host with `/dev/kfd`)
 
 ```bash
-docker pull ghcr.io/krainov/milvus-hip:v2.5.4-rocm
+docker pull ghcr.io/konkolchin/milvus-hip:v2.5.4-rocm
 docker rm -f milvus-standalone milvus-hip-standalone 2>/dev/null || true
 
 cd deployments/docker/standalone-rocm
-export MILVUS_HIP_IMAGE=ghcr.io/krainov/milvus-hip:v2.5.4-rocm
+export MILVUS_HIP_IMAGE=ghcr.io/konkolchin/milvus-hip:v2.5.4-rocm
 bash up.sh
 bash smoke.sh
 ```
@@ -54,7 +54,7 @@ bash up.sh
 bash smoke.sh
 ```
 
-To publish a new lab pack: `bash push_ghcr.sh` (needs `gh` auth to `krainov`).
+To publish a new lab pack: `bash push_ghcr.sh` (GitHub user `konkolchin`, PAT `write:packages`).
 
 ## From-source builder (hours, not this tag)
 
