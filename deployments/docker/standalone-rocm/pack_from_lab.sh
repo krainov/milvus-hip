@@ -191,13 +191,26 @@ echo "==> pin glog/gflags to gflags::FlagRegisterer (not apt google::)"
 rm -f "${CTX}/lib"/libglog.so* "${CTX}/lib"/libgflags.so* \
   "${CTX}/lib"/libgflags_nothreads.so* "${CTX}/lib"/libgflags_gflagsns.so*
 
+# Do not use grep -q in a pipe under pipefail: grep exits early, nm gets
+# SIGPIPE (141), and a successful match looks like failure.
+_nm_has() {
+  local file="$1" pat="$2" mode="${3:-}"
+  local out
+  if [ "${mode}" = "-D" ]; then
+    out="$(nm -D "${file}" 2>/dev/null | grep -F "${pat}" || true)"
+  else
+    out="$(nm "${file}" 2>/dev/null | grep -F "${pat}" || true)"
+  fi
+  [ -n "${out}" ]
+}
+
 _gflags_ns() {
-  nm -D "$1" 2>/dev/null | grep -q '_ZN6gflags14FlagRegisterer'
+  _nm_has "$1" '_ZN6gflags14FlagRegisterer' -D
 }
 
 _install_gflags_elf() {
   local real="$1"
-  local soname=""
+  local soname="" _n="" _src=""
   [ -f "${real}" ] || return 1
   _gflags_ns "${real}" || return 1
   echo "    gflags(gflags::) ${real}"
@@ -207,10 +220,18 @@ _install_gflags_elf() {
   if [ -z "${soname}" ]; then
     soname="$(readelf -d "${real}" 2>/dev/null | awk '/SONAME/ {gsub(/[\[\]]/,"",$NF); print $NF; exit}')"
   fi
-  # glog DT_NEEDED is usually libgflags.so.2.2 even when the ELF basename differs.
-  for _n in ${soname} libgflags.so.2.2 libgflags.so.2 libgflags.so "$(basename "${real}")"; do
+  for _n in ${soname} libgflags.so.2.2 libgflags.so.2 libgflags.so \
+            libgflags_nothreads.so.2.2.2 libgflags_nothreads.so.2.2 \
+            libgflags_nothreads.so "$(basename "${real}")"; do
     [ -n "${_n}" ] || continue
     cp -f "${real}" "${CTX}/lib/${_n}"
+  done
+  for _src in "${CTX}/lib/libglog.so.1" "${CTX}/bin/milvus"; do
+    [ -e "${_src}" ] || continue
+    while IFS= read -r _n; do
+      [ -n "${_n}" ] || continue
+      cp -f "${real}" "${CTX}/lib/${_n}"
+    done < <(readelf -d "${_src}" 2>/dev/null | awk '/NEEDED/ && /gflags/ {gsub(/[\[\]]/,"",$NF); print $NF}')
   done
   return 0
 }
@@ -271,7 +292,8 @@ if [ "${_gflags_ok}" = "0" ]; then
       break
     fi
   done < <(find "${HOME}/.conan" "${HOME}/.conan2" "${WORKDIR}" \
-    \( -name 'libgflags.so*' -o -name 'libgflags_gflagsns.so' \) -type f 2>/dev/null | head -40)
+    \( -name 'libgflags.so*' -o -name 'libgflags_nothreads.so*' -o -name 'libgflags_gflagsns.so' \) \
+    -type f 2>/dev/null | head -40)
 fi
 
 # July box has no leftover libshims file. Rebuild from Conan gflags .a
@@ -293,9 +315,9 @@ if [ "${_gflags_ok}" = "0" ]; then
     g++ -shared -fPIC -o "${_tmp_so}" \
       -Wl,--whole-archive "${_gflags_a}" -Wl,--no-whole-archive \
       -lpthread -lrt
-    if nm -D "${_tmp_so}" 2>/dev/null | grep -q '_ZN6gflags14FlagRegisterer'; then
+    if _nm_has "${_tmp_so}" '_ZN6gflags14FlagRegisterer' -D; then
       mv -f "${_tmp_so}" "${_shim}"
-    elif nm -D "${_tmp_so}" 2>/dev/null | grep -q '_ZN6google14FlagRegisterer'; then
+    elif _nm_has "${_tmp_so}" '_ZN6google14FlagRegisterer' -D; then
       _map="${WORKDIR}/libshims/gflags_redefine.map"
       nm -D "${_tmp_so}" | awk '{print $NF}' | grep '6google' | sort -u | while read -r _sym; do
         printf '%s %s\n' "${_sym}" "${_sym//6google/6gflags}"
@@ -316,18 +338,27 @@ if [ "${_gflags_ok}" = "0" ]; then
   fi
 fi
 
-if [ -f "${CTX}/lib/libglog.so.1" ] && \
-   nm -D "${CTX}/lib/libglog.so.1" 2>/dev/null | grep -q ' U .*_ZN6gflags14FlagRegisterer'
-then
-  if ! find "${CTX}/lib" -maxdepth 1 \( -name 'libgflags*' \) -print0 2>/dev/null \
-      | xargs -0 -r nm -D 2>/dev/null | grep -q '_ZN6gflags14FlagRegisterer'
-  then
-    echo "ERROR: packed libglog.so.1 needs gflags::FlagRegisterer, but no packed" >&2
-    echo "  libgflags exports it (apt/ROCm gflags use google:: and will not work)." >&2
-    echo "  Expected Conan archive: ~/.conan/data/gflags/.../lib/libgflags*.a" >&2
-    echo "  ls ~/.conan/data/gflags/*/_/_/package/*/lib/" >&2
-    exit 1
+_glog_needs_gflags_ns=0
+if [ -f "${CTX}/lib/libglog.so.1" ]; then
+  _glog_undef="$(nm -D "${CTX}/lib/libglog.so.1" 2>/dev/null | grep ' U ' | grep -F '_ZN6gflags14FlagRegisterer' || true)"
+  if [ -n "${_glog_undef}" ]; then
+    _glog_needs_gflags_ns=1
   fi
+fi
+_packed_gflags_ns=0
+for _f in "${CTX}/lib"/libgflags*.so*; do
+  [ -f "${_f}" ] || continue
+  if _gflags_ns "${_f}"; then
+    _packed_gflags_ns=1
+    break
+  fi
+done
+if [ "${_glog_needs_gflags_ns}" = "1" ] && [ "${_packed_gflags_ns}" != "1" ]; then
+  echo "ERROR: packed libglog.so.1 needs gflags::FlagRegisterer, but no packed" >&2
+  echo "  libgflags exports it (apt/ROCm gflags use google:: and will not work)." >&2
+  echo "  ls -l ${CTX}/lib/libgflags* ${CTX}/lib/libglog*" >&2
+  ls -l "${CTX}/lib"/libgflags* "${CTX}/lib"/libglog* 2>&1 | head >&2 || true
+  exit 1
 fi
 if [ "${_gflags_ok}" = "1" ]; then
   echo "    FlagRegisterer pin ok"
