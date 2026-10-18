@@ -40,7 +40,20 @@ docker rmi "${IMAGE}" >/dev/null 2>&1 || true
 docker build --no-cache -t "${IMAGE}" "${SCRIPT_DIR}/context"
 
 bash "${SCRIPT_DIR}/up.sh"
+echo "==> waiting for healthz (standalone needs ~15-60s after DataNode register)"
+ok=0
+for i in $(seq 1 45); do
+  if curl -sf http://127.0.0.1:9091/healthz >/dev/null 2>&1; then
+    echo "    healthz OK (${i})"
+    ok=1
+    break
+  fi
+  sleep 2
+done
 echo "==> logs:"
-sleep 2
-docker logs milvus-hip-standalone 2>&1 | tail -40
-curl -sf http://127.0.0.1:9091/healthz && echo " healthz OK" || echo "healthz not ready yet; wait and: bash smoke.sh"
+docker logs milvus-hip-standalone 2>&1 | tail -20
+if [ "${ok}" = "1" ]; then
+  echo "Next: bash smoke.sh"
+else
+  echo "healthz not ready yet; wait and: bash smoke.sh"
+fi
