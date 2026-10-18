@@ -22,23 +22,36 @@ fi
 
 docker rm -f "${NAME}" >/dev/null 2>&1 || true
 
+# AMDGPU_IDS: host file the ROCm image often omits (startup: No such file).
+_ids=""
+for p in /opt/amdgpu/share/libdrm/amdgpu.ids /usr/share/libdrm/amdgpu.ids; do
+  if [ -f "${p}" ]; then _ids="${p}"; break; fi
+done
+
 echo "==> docker run ${NAME} (${IMAGE})"
-docker run -d --name "${NAME}" \
-  --network "${NET}" \
-  --security-opt seccomp:unconfined \
-  --device /dev/kfd \
-  --device /dev/dri \
-  --group-add video \
-  -e MINIO_REGION=us-east-1 \
-  -e ETCD_ENDPOINTS=etcd:2379 \
-  -e MINIO_ADDRESS=minio:9000 \
-  -e HIP_VISIBLE_DEVICES=0 \
-  -e ROCR_VISIBLE_DEVICES=0 \
-  -p 19530:19530 \
-  -p 9091:9091 \
-  -v "${VOL}:/var/lib/milvus" \
-  "${IMAGE}" \
-  milvus run standalone
+# --ipc=host: hipVS IVF search uses GPU IPC; index build can succeed without it.
+_run=(docker run -d --name "${NAME}"
+  --network "${NET}"
+  --ipc=host
+  --cap-add SYS_PTRACE
+  --security-opt seccomp:unconfined
+  --device /dev/kfd
+  --device /dev/dri
+  --group-add video
+  -e MINIO_REGION=us-east-1
+  -e ETCD_ENDPOINTS=etcd:2379
+  -e MINIO_ADDRESS=minio:9000
+  -e HIP_VISIBLE_DEVICES=0
+  -e ROCR_VISIBLE_DEVICES=0
+  -p 19530:19530
+  -p 9091:9091
+  -v "${VOL}:/var/lib/milvus"
+)
+if [ -n "${_ids}" ]; then
+  echo "    mount amdgpu.ids from ${_ids}"
+  _run+=(-v "${_ids}:/opt/amdgpu/share/libdrm/amdgpu.ids:ro")
+fi
+"${_run[@]}" "${IMAGE}" milvus run standalone
 
 echo "    docker logs -f ${NAME}"
 echo "    curl -sf http://127.0.0.1:9091/healthz && echo OK"

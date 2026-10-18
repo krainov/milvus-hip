@@ -47,6 +47,9 @@ services:
     container_name: milvus-hip-standalone
     image: ${MILVUS_HIP_IMAGE:-milvus-hip:v2.5.4-rocm}
     command: ["milvus", "run", "standalone"]
+    ipc: host
+    cap_add:
+      - SYS_PTRACE
     security_opt:
       - seccomp:unconfined
     devices:
