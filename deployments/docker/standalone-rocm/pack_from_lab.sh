@@ -30,7 +30,7 @@ _copy_so() {
   # Conan glog wants gflags::FlagRegisterer. Apt/ROCm gflags export google::.
   # Never copy those during the bulk/ldd pass — pin step below picks the pair.
   case "$(basename "${src}")" in
-    libglog.so*|libgflags.so*|libgflags_nothreads.so*|libgflags_gflagsns.so*|libfmt.so*|libspdlog.so*)
+    libglog.so*|libgflags.so*|libgflags_nothreads.so*|libgflags_gflagsns.so*)
       case "${src}" in
         /opt/rocm/*|/usr/*|/lib/*|/lib64/*) return 0 ;;
       esac
@@ -445,6 +445,37 @@ if [ "${_gflags_ok}" = "1" ]; then
   echo "    FlagRegisterer pin ok"
 elif [ -f "${CTX}/lib/libglog.so.1" ]; then
   echo "WARNING: no gflags that covers glog FlagRegisterer; container will likely die" >&2
+fi
+
+# Host ldd still sees /usr/lib spdlog, so a skip of apt libs looks "clean" on
+# the box and then the container dies with libspdlog.so.1 not found.
+echo "==> pin spdlog/fmt the host milvus loads"
+while IFS= read -r _p; do
+  [ -n "${_p}" ] && [ -e "${_p}" ] || continue
+  _real="$(readlink -f "${_p}")"
+  [ -f "${_real}" ] || continue
+  echo "    ${_p} <- ${_real}"
+  cp -f "${_real}" "${CTX}/lib/$(basename "${_real}")"
+  cp -f "${_real}" "${CTX}/lib/$(basename "${_p}")"
+  _sn="$(objdump -p "${_real}" 2>/dev/null | awk '/SONAME/ {print $2; exit}')"
+  if [ -n "${_sn}" ]; then
+    cp -f "${_real}" "${CTX}/lib/${_sn}"
+  fi
+done < <(ldd "${_bin}" 2>/dev/null | awk '/libspdlog|libfmt/ && /=> \// {print $3}')
+if [ ! -e "${CTX}/lib/libspdlog.so.1" ]; then
+  for _c in \
+    "${MILVUS_DIR}/internal/core/output/lib"/libspdlog.so.1 \
+    /usr/lib/x86_64-linux-gnu/libspdlog.so.1
+  do
+    [ -e "${_c}" ] || continue
+    cp -f "$(readlink -f "${_c}")" "${CTX}/lib/libspdlog.so.1"
+    echo "    fallback libspdlog.so.1 <- ${_c}"
+    break
+  done
+fi
+if [ ! -e "${CTX}/lib/libspdlog.so.1" ]; then
+  echo "ERROR: libspdlog.so.1 not packed; container cannot start" >&2
+  exit 1
 fi
 
 _missing="$(LD_LIBRARY_PATH="${CTX}/lib" ldd "${CTX}/bin/milvus" 2>/dev/null | grep 'not found' || true)"
