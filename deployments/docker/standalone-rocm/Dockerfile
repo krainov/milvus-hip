@@ -31,6 +31,8 @@ RUN chmod 755 /milvus/bin/milvus /milvus/docker-entrypoint.sh && \
 
 ENV PATH=/milvus/bin:/opt/rocm/bin:$PATH
 ENV LD_LIBRARY_PATH=/milvus/lib:/opt/rocm/lib:$LD_LIBRARY_PATH
+ENV HIPBLASLT_TENSILE_LIBPATH=/milvus/lib/hipblaslt/library
+ENV ROCBLAS_TENSILE_LIBPATH=/milvus/lib/rocblas/library
 ENV HIP_VISIBLE_DEVICES=0
 ENV ROCR_VISIBLE_DEVICES=0
 

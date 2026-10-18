@@ -124,6 +124,28 @@ for _libdir in /opt/rocm/lib /opt/rocm/lib64 /opt/rocm/hip/lib; do
   fi
 done
 
+# hipBLASLt / rocBLAS look for Tensile kernels next to the .so we packed
+# into /milvus/lib. Without this, IVF_FLAT search (dim=128) dies with
+# cublasLtMatmulAlgoGetHeuristic CUBLAS_STATUS_INVALID_VALUE; dim=8 can
+# skip Lt and still work.
+_copy_tensile() {
+  local src="$1" dest="$2"
+  if [ -d "${src}" ]; then
+    echo "    tensile ${src} -> ${CTX}/lib/${dest}"
+    mkdir -p "${CTX}/lib/${dest}"
+    cp -a "${src}/." "${CTX}/lib/${dest}/"
+  fi
+}
+_copy_tensile /opt/rocm/lib/hipblaslt/library hipblaslt/library
+_copy_tensile /opt/rocm/lib64/hipblaslt/library hipblaslt/library
+_copy_tensile /opt/rocm/hipblaslt/lib/library hipblaslt/library
+_copy_tensile /opt/rocm/lib/rocblas/library rocblas/library
+_copy_tensile /opt/rocm/lib64/rocblas/library rocblas/library
+_copy_tensile /opt/rocm/rocblas/lib/library rocblas/library
+if [ ! -d "${CTX}/lib/hipblaslt/library" ]; then
+  echo "WARNING: no hipBLASLt Tensile library packed; GPU_IVF_FLAT search may fail on dim=128" >&2
+fi
+
 # Copy shared libs the binary actually needs. The July host ROCm SONAMEs
 # (e.g. libhipblas.so.3) are often missing from rocm/dev-ubuntu Docker tags,
 # so do not skip /opt/rocm — only skip glibc/libstdc++ from the Ubuntu image.
