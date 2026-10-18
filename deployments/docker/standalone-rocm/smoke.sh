@@ -8,6 +8,21 @@ set -euo pipefail
 
 URI="${MILVUS_URI:-http://127.0.0.1:19530}"
 HEALTHZ="${HEALTHZ_URL:-http://127.0.0.1:9091/healthz}"
+WORKDIR="${WORKDIR:-${HOME}/rocmds_check_gfx1100}"
+HARNESS_DIR="${HARNESS_DIR:-}"
+if [ -z "${HARNESS_DIR}" ]; then
+  for d in \
+    "${HOME}/ann-harness-amd" \
+    "${HOME}/ann_harness_amd" \
+    "${HOME}/ann-harness" \
+    "${WORKDIR}/ann-harness-amd"
+  do
+    if [ -x "${d}/scripts/run_milvus_gpu_smoke.sh" ]; then
+      HARNESS_DIR="${d}"
+      break
+    fi
+  done
+fi
 HARNESS_DIR="${HARNESS_DIR:-${HOME}/ann-harness-amd}"
 
 echo "==> waiting for ${HEALTHZ}"
@@ -29,9 +44,29 @@ fi
 
 if [ -x "${HARNESS_DIR}/scripts/run_milvus_gpu_smoke.sh" ]; then
   echo "==> harness GPU_IVF_FLAT smoke (SKIP_START=1, server already in Docker)"
+  echo "    HARNESS_DIR=${HARNESS_DIR}"
+  export WORKDIR MILVUS_DIR="${MILVUS_DIR:-${WORKDIR}/milvus}"
+  export HIPVS_PREFIX="${HIPVS_PREFIX:-${WORKDIR}/install}"
+  if [ -z "${DATA_PATH:-}" ]; then
+    for p in \
+      "${HARNESS_DIR}/data/sift-128-euclidean.hdf5" \
+      "${WORKDIR}/data/sift-128-euclidean.hdf5" \
+      "${HOME}/sift-128-euclidean.hdf5"
+    do
+      if [ -f "${p}" ]; then DATA_PATH="${p}"; break; fi
+    done
+  fi
+  if [ -n "${DATA_PATH:-}" ]; then
+    export DATA_PATH
+    echo "    DATA_PATH=${DATA_PATH}"
+  fi
   SKIP_START=1 SKIP_DEPS=1 bash "${HARNESS_DIR}/scripts/run_milvus_gpu_smoke.sh"
 else
-  echo "NOTE: harness not at ${HARNESS_DIR}; healthz passed."
-  echo "      Clone konkolchin/ann-harness-amd and re-run for GPU_IVF_FLAT recall."
+  echo "NOTE: harness not at ${HARNESS_DIR}; healthz passed. Server is up on :19530."
+  echo "      GPU_IVF_FLAT still needs the harness + SIFT hdf5:"
+  echo "        git clone https://github.com/konkolchin/ann-harness-amd.git ~/ann-harness-amd"
+  echo "        mkdir -p ~/ann-harness-amd/data"
+  echo "        wget --no-proxy https://ann-benchmarks.com/sift-128-euclidean.hdf5 -O ~/ann-harness-amd/data/sift-128-euclidean.hdf5"
+  echo "        bash $0"
   echo "      Do not push a public tag until that smoke is green."
 fi
