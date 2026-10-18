@@ -63,13 +63,27 @@ cd milvus-hip/deployments/docker/standalone-rocm
 export MILVUS_DIR=$HOME/rocmds_check_gfx1100/milvus
 export HIPVS_PREFIX=$HOME/rocmds_check_gfx1100/install
 bash pack_from_lab.sh
-docker build -t milvus-hip:v2.5.4-rocm context/
+docker build -t milvus-hip:local context/
+export MILVUS_HIP_IMAGE=milvus-hip:local
 bash up.sh
 bash smoke.sh
 ```
 
-To publish a new pack: `bash push_ghcr.sh` (GitHub user `konkolchin`, PAT
-`write:packages`).
+That local tag is enough to run. You do not need GitHub Container Registry.
+To keep the image on another machine:
+
+```bash
+docker save milvus-hip:local | gzip > milvus-hip-local.tar.gz
+# on the other host:
+gunzip -c milvus-hip-local.tar.gz | docker load
+export MILVUS_HIP_IMAGE=milvus-hip:local
+bash up.sh
+```
+
+Optional: `docker tag milvus-hip:local ghcr.io/<your-github-user>/milvus-hip:v2.5.4-rocm` and
+`docker push` to **your** GHCR namespace (PAT with `write:packages`). The published
+`ghcr.io/konkolchin/milvus-hip:v2.5.4-rocm` tag is only for this project's
+maintainers.
 
 ## From-source builder (hours, not this tag)
 
