@@ -30,7 +30,7 @@ _copy_so() {
   # Conan glog wants gflags::FlagRegisterer. Apt/ROCm gflags export google::.
   # Never copy those during the bulk/ldd pass — pin step below picks the pair.
   case "$(basename "${src}")" in
-    libglog.so*|libgflags.so*|libgflags_nothreads.so*|libgflags_gflagsns.so*)
+    libglog.so*|libgflags.so*|libgflags_nothreads.so*|libgflags_gflagsns.so*|libfmt.so*|libspdlog.so*)
       case "${src}" in
         /opt/rocm/*|/usr/*|/lib/*|/lib64/*) return 0 ;;
       esac
