@@ -22,6 +22,14 @@ fi
 
 docker rm -f "${NAME}" >/dev/null 2>&1 || true
 
+# Recreate standalone gets a new proxy node ID. etcd still has the old
+# session → drop_collection fails with node not match expected=2 actual=3.
+if docker-compose -f docker-compose.yml ps etcd 2>/dev/null | grep -q milvus-etcd; then
+  echo "==> restart etcd (drop stale proxy session)"
+  docker-compose -f docker-compose.yml restart etcd
+  sleep 5
+fi
+
 # AMDGPU_IDS: host file the ROCm image often omits (startup: No such file).
 _ids=""
 for p in /opt/amdgpu/share/libdrm/amdgpu.ids /usr/share/libdrm/amdgpu.ids; do

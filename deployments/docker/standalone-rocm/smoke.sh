@@ -60,6 +60,8 @@ if [ -x "${HARNESS_DIR}/scripts/run_milvus_gpu_smoke.sh" ]; then
     export DATA_PATH
     echo "    DATA_PATH=${DATA_PATH}"
   fi
+  export SMOKE_COLLECTION="${SMOKE_COLLECTION:-sift_gpu_ivf_smoke_${RANDOM}}"
+  echo "    SMOKE_COLLECTION=${SMOKE_COLLECTION}"
   SKIP_START=1 SKIP_DEPS=1 bash "${HARNESS_DIR}/scripts/run_milvus_gpu_smoke.sh"
 else
   echo "NOTE: harness not at ${HARNESS_DIR}; healthz passed. Server is up on :19530."
