@@ -271,7 +271,49 @@ if [ "${_gflags_ok}" = "0" ]; then
       break
     fi
   done < <(find "${HOME}/.conan" "${HOME}/.conan2" "${WORKDIR}" \
-    -name 'libgflags.so*' -o -name 'libgflags_gflagsns.so' 2>/dev/null | head -40)
+    \( -name 'libgflags.so*' -o -name 'libgflags_gflagsns.so' \) -type f 2>/dev/null | head -40)
+fi
+
+# July box has no leftover libshims file. Rebuild from Conan gflags .a
+# (same recipe as the Knowhere GPU test runner).
+if [ "${_gflags_ok}" = "0" ]; then
+  mkdir -p "${WORKDIR}/libshims"
+  set +e
+  _gflags_a="$(ls -1 \
+    "${HOME}"/.conan/data/gflags/*/_/_/package/*/lib/libgflags_nothreads.a \
+    "${HOME}"/.conan/data/gflags/*/_/_/package/*/lib/libgflags.a \
+    "${HOME}"/.conan2/p/*/p/lib/libgflags_nothreads.a \
+    "${HOME}"/.conan2/p/*/p/lib/libgflags.a \
+    2>/dev/null | head -1)"
+  set -e
+  if [ -n "${_gflags_a}" ] && [ -f "${_gflags_a}" ]; then
+    echo "    build gflags:: shim from ${_gflags_a}"
+    _tmp_so="${WORKDIR}/libshims/libgflags_shim_tmp.so"
+    _shim="${WORKDIR}/libshims/libgflags_gflagsns.so"
+    g++ -shared -fPIC -o "${_tmp_so}" \
+      -Wl,--whole-archive "${_gflags_a}" -Wl,--no-whole-archive \
+      -lpthread -lrt
+    if nm -D "${_tmp_so}" 2>/dev/null | grep -q '_ZN6gflags14FlagRegisterer'; then
+      mv -f "${_tmp_so}" "${_shim}"
+    elif nm -D "${_tmp_so}" 2>/dev/null | grep -q '_ZN6google14FlagRegisterer'; then
+      _map="${WORKDIR}/libshims/gflags_redefine.map"
+      nm -D "${_tmp_so}" | awk '{print $NF}' | grep '6google' | sort -u | while read -r _sym; do
+        printf '%s %s\n' "${_sym}" "${_sym//6google/6gflags}"
+      done > "${_map}"
+      echo "    rename google:: -> gflags:: ($(wc -l < "${_map}") symbols)"
+      objcopy --redefine-syms="${_map}" "${_tmp_so}" "${_shim}"
+      rm -f "${_tmp_so}" "${_map}"
+    else
+      echo "ERROR: FlagRegisterer not in Conan gflags after linking ${_tmp_so}" >&2
+      nm -D "${_tmp_so}" 2>/dev/null | grep -i FlagRegisterer | head >&2 || true
+      exit 1
+    fi
+    if _install_gflags_elf "${_shim}"; then
+      _gflags_ok=1
+    fi
+  else
+    echo "    no Conan libgflags*.a under ~/.conan"
+  fi
 fi
 
 if [ -f "${CTX}/lib/libglog.so.1" ] && \
@@ -282,9 +324,8 @@ then
   then
     echo "ERROR: packed libglog.so.1 needs gflags::FlagRegisterer, but no packed" >&2
     echo "  libgflags exports it (apt/ROCm gflags use google:: and will not work)." >&2
-    echo "  Host Milvus uses: LD_PRELOAD=${WORKDIR}/libshims/libgflags_gflagsns.so" >&2
-    echo "  That file must be a real ELF with gflags:: symbols, not a symlink to apt." >&2
-    echo "  nm -D ${WORKDIR}/libshims/libgflags_gflagsns.so | grep FlagRegisterer" >&2
+    echo "  Expected Conan archive: ~/.conan/data/gflags/.../lib/libgflags*.a" >&2
+    echo "  ls ~/.conan/data/gflags/*/_/_/package/*/lib/" >&2
     exit 1
   fi
 fi
