@@ -30,9 +30,8 @@ git clone -b v2.5.4 https://github.com/krainov/milvus-hip.git
 cd milvus-hip/deployments/docker/standalone-rocm
 
 docker pull ghcr.io/konkolchin/milvus-hip:v2.5.4-rocm
+docker tag ghcr.io/konkolchin/milvus-hip:v2.5.4-rocm milvus-hip:v2.5.4-rocm
 docker rm -f milvus-standalone milvus-hip-standalone 2>/dev/null || true
-
-export MILVUS_HIP_IMAGE=ghcr.io/konkolchin/milvus-hip:v2.5.4-rocm
 bash up.sh
 bash smoke.sh
 ```
@@ -63,27 +62,26 @@ cd milvus-hip/deployments/docker/standalone-rocm
 export MILVUS_DIR=$HOME/rocmds_check_gfx1100/milvus
 export HIPVS_PREFIX=$HOME/rocmds_check_gfx1100/install
 bash pack_from_lab.sh
-docker build -t milvus-hip:local context/
-export MILVUS_HIP_IMAGE=milvus-hip:local
+docker build -t milvus-hip:v2.5.4-rocm context/
 bash up.sh
 bash smoke.sh
 ```
 
-That local tag is enough to run. You do not need GitHub Container Registry.
-To keep the image on another machine:
+`up.sh` runs `milvus-hip:v2.5.4-rocm`. That is the same name as the `docker build -t`
+above, so no extra environment variable is required. You do not need GitHub
+Container Registry to use a pack you just built.
+
+To copy that image to another machine: `docker save milvus-hip:v2.5.4-rocm | gzip > milvus-hip.tar.gz`, then on the other host `gunzip -c milvus-hip.tar.gz | docker load` and `bash up.sh`.
+
+To publish under **your** GitHub account (optional):
 
 ```bash
-docker save milvus-hip:local | gzip > milvus-hip-local.tar.gz
-# on the other host:
-gunzip -c milvus-hip-local.tar.gz | docker load
-export MILVUS_HIP_IMAGE=milvus-hip:local
-bash up.sh
+docker tag milvus-hip:v2.5.4-rocm ghcr.io/<your-github-user>/milvus-hip:v2.5.4-rocm
+docker push ghcr.io/<your-github-user>/milvus-hip:v2.5.4-rocm
 ```
 
-Optional: `docker tag milvus-hip:local ghcr.io/<your-github-user>/milvus-hip:v2.5.4-rocm` and
-`docker push` to **your** GHCR namespace (PAT with `write:packages`). The published
-`ghcr.io/konkolchin/milvus-hip:v2.5.4-rocm` tag is only for this project's
-maintainers.
+Use a PAT with `write:packages` for that user. `push_ghcr.sh` is only a helper
+for this repo's published tag `ghcr.io/konkolchin/milvus-hip:v2.5.4-rocm`.
 
 ## From-source builder (hours, not this tag)
 
