@@ -1,47 +1,66 @@
 # Milvus HIP standalone (ROCm Docker)
 
-This is the AMD analogue of official Milvus GPU Docker. Official
-`milvusdb/milvus` GPU tags are **CUDA**. They do not give GPU search on a Radeon.
+Tech preview image for Milvus **v2.5.4** GPU ANN on AMD **HIP/ROCm**.
 
-Stock [pymilvus](https://github.com/milvus-io/pymilvus) talks to port **19530**.
-There is no HIP build of pymilvus.
+Official `milvusdb/milvus` GPU tags are **CUDA**. They do not give GPU search
+on a Radeon. Stock [pymilvus](https://github.com/milvus-io/pymilvus) talks to
+port **19530**. There is no HIP build of pymilvus.
 
-Validated path: RX 7900 XTX (`gfx1100`), ROCm 7.0.2. Instinct is untested.
-Do not apply the harness IVF packer patch on wave64 Instinct GPUs.
+## What this image claims
 
-## Phase 1 — pack a lab build (first green image)
+Image: `ghcr.io/krainov/milvus-hip:v2.5.4-rocm`
 
-On the AMD box, after Layer-3 (`ann-harness-amd` `build_milvus_layer3.sh`):
+| Claim | Status |
+|-------|--------|
+| Milvus | v2.5.4 HIP pack (July lab binary) |
+| GPU | RX 7900 XTX (`gfx1100`), ROCm 7.0.2 |
+| `GPU_IVF_FLAT` | **Verified** — sealed `GPU_CUVS_IVF_FLAT` build/load/search; slice-exact recall@10 = 1.0 at nprobe 128 (50k×128 SIFT) |
+| `GPU_IVF_PQ` | **Not claimed** for this image (host port has lab benches; Docker smoke not run) |
+| `GPU_CAGRA` | **Not claimed** |
+| Instinct | **Not claimed** (untested). Do not apply the harness wave32 IVF packer on wave64 Instinct |
+
+## Pull and run (AMD host with `/dev/kfd`)
 
 ```bash
-# Stop leftover official standalone (wrong libcuvs mix-up)
-docker rm -f milvus-standalone 2>/dev/null || true
+docker pull ghcr.io/krainov/milvus-hip:v2.5.4-rocm
+docker rm -f milvus-standalone milvus-hip-standalone 2>/dev/null || true
 
 cd deployments/docker/standalone-rocm
-bash pack_from_lab.sh          # or: bash build_rocm_image.sh pack
-docker build -t milvus-hip:v2.5.4-rocm context/
-# apt docker-compose 1.x hits KeyError: ContainerConfig on this image — use up.sh
+export MILVUS_HIP_IMAGE=ghcr.io/krainov/milvus-hip:v2.5.4-rocm
 bash up.sh
 bash smoke.sh
 ```
 
-Do not push `ghcr.io/krainov/milvus-hip:v2.5.4-rocm` until `smoke.sh` is green.
+`up.sh` starts etcd/MinIO and `docker run` with `--device /dev/kfd`, `--ipc=host`.
+Ubuntu apt `docker-compose` 1.x hits `KeyError: ContainerConfig` on this image.
 
-## Phase 2 — compile inside Docker (hours)
+```python
+from pymilvus import connections
+connections.connect(host="127.0.0.1", port="19530")
+```
+
+## Rebuild from a lab prefix (packers)
+
+On the AMD box, after Layer-3 (`ann-harness-amd` `build_milvus_layer3.sh`):
+
+```bash
+docker rm -f milvus-standalone 2>/dev/null || true
+cd deployments/docker/standalone-rocm
+export MILVUS_DIR=$HOME/rocmds_check_gfx1100/milvus
+export HIPVS_PREFIX=$HOME/rocmds_check_gfx1100/install
+bash pack_from_lab.sh
+docker build -t milvus-hip:v2.5.4-rocm context/
+bash up.sh
+bash smoke.sh
+```
+
+To publish a new lab pack: `bash push_ghcr.sh` (needs `gh` auth to `krainov`).
+
+## From-source builder (hours, not this tag)
 
 ```bash
 bash build_rocm_image.sh source
 ```
 
 `APPLY_PACKER=1` and `OFFLOAD_ARCH=gfx1100` are the defaults. Not for GitHub-hosted CI.
-
-## Client
-
-```bash
-pip install pymilvus
-```
-
-```python
-from pymilvus import connections
-connections.connect(host="127.0.0.1", port="19530")
-```
+The published `v2.5.4-rocm` tag is the **pack** path, not this builder.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Lab gate before any public image tag.
+# Lab gate for the published gfx1100 GPU_IVF_FLAT image.
 # Run on the AMD host after: bash up.sh
 #
 #   bash deployments/docker/standalone-rocm/smoke.sh

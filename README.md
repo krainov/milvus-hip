@@ -27,11 +27,16 @@ pip install pymilvus
 ```
 
 `19530` is the default gRPC port of a running Milvus standalone.
-Build this tree first (see below), **or** start the ROCm compose image
+Build this tree first (see below), **or** run the published ROCm image
 ([`deployments/docker/standalone-rocm`](deployments/docker/standalone-rocm/README.md)).
 The official `milvusdb/milvus` GPU image is CUDA. It does not give GPU search
 on a Radeon. Stop any leftover `milvus-standalone` container first — it can
 load the wrong `libcuvs`.
+
+**Docker image** `ghcr.io/krainov/milvus-hip:v2.5.4-rocm`: Milvus v2.5.4,
+RX 7900 XTX (`gfx1100`). **`GPU_IVF_FLAT` verified** (sealed `GPU_CUVS_IVF_FLAT`,
+slice-exact recall@10 = 1.0 at nprobe 128). **`GPU_IVF_PQ`, `GPU_CAGRA`, and
+Instinct are not claimed** for this image.
 
 When the server is up:
 
@@ -41,15 +46,13 @@ connections.connect(host="127.0.0.1", port="19530")
 ```
 
 ```bash
-# On the AMD host, after a Layer-3 lab build (see standalone-rocm/README.md)
+docker pull ghcr.io/krainov/milvus-hip:v2.5.4-rocm
 docker rm -f milvus-standalone 2>/dev/null || true
 cd deployments/docker/standalone-rocm
-bash build_rocm_image.sh pack
-docker compose up -d
+export MILVUS_HIP_IMAGE=ghcr.io/krainov/milvus-hip:v2.5.4-rocm
+bash up.sh
 bash smoke.sh
 ```
-
-Do not push a public image tag until `smoke.sh` is green on a Radeon.
 
 ---
 
