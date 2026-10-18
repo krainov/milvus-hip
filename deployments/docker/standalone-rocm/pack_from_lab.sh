@@ -27,12 +27,12 @@ _copy_so() {
   local src="$1"
   local base dest real realbase
   [ -L "${src}" ] || [ -f "${src}" ] || return 0
-  # ROCm's glog + Conan gflags = FlagRegisterer lookup error. Keep glog/gflags
-  # only from the Milvus/Knowhere link (ldd of the binary / output/lib).
+  # Conan glog wants gflags::FlagRegisterer. Apt/ROCm gflags export google::.
+  # Never copy those during the bulk/ldd pass — pin step below picks the pair.
   case "$(basename "${src}")" in
-    libglog.so*|libgflags.so*|libgflags_nothreads.so*)
+    libglog.so*|libgflags.so*|libgflags_nothreads.so*|libgflags_gflagsns.so*)
       case "${src}" in
-        /opt/rocm/*) return 0 ;;
+        /opt/rocm/*|/usr/*|/lib/*|/lib64/*) return 0 ;;
       esac
       ;;
   esac
@@ -153,6 +153,12 @@ _copy_ldd "${CTX}/bin/milvus"
 _resolve_missing() {
   local name src
   name="$1"
+  case "${name}" in
+    libglog.so*|libgflags.so*|libgflags_nothreads.so*)
+      echo "    skip apt/rocm resolve for ${name} (ABI pin later)"
+      return 0
+      ;;
+  esac
   src="$(ldconfig -p 2>/dev/null | awk -v n="${name}" '$1 == n {print $NF; exit}')"
   if [ -z "${src}" ] || [ ! -e "${src}" ]; then
     src="$(find /opt/rocm /opt/rocm-* "${HIPVS_PREFIX}" "${WORKDIR}/install" \
@@ -180,6 +186,113 @@ for _pass in 1 2 3 4 5 6; do
     _resolve_missing "${_n}"
   done
 done
+
+echo "==> pin glog/gflags to gflags::FlagRegisterer (not apt google::)"
+rm -f "${CTX}/lib"/libglog.so* "${CTX}/lib"/libgflags.so* \
+  "${CTX}/lib"/libgflags_nothreads.so* "${CTX}/lib"/libgflags_gflagsns.so*
+
+_gflags_ns() {
+  nm -D "$1" 2>/dev/null | grep -q '_ZN6gflags14FlagRegisterer'
+}
+
+_install_gflags_elf() {
+  local real="$1"
+  local soname=""
+  [ -f "${real}" ] || return 1
+  _gflags_ns "${real}" || return 1
+  echo "    gflags(gflags::) ${real}"
+  _copy_so "${real}"
+  cp -f "${real}" "${CTX}/lib/libgflags_gflagsns.so"
+  soname="$(objdump -p "${real}" 2>/dev/null | awk '/SONAME/ {print $2; exit}')"
+  if [ -z "${soname}" ]; then
+    soname="$(readelf -d "${real}" 2>/dev/null | awk '/SONAME/ {gsub(/[\[\]]/,"",$NF); print $NF; exit}')"
+  fi
+  # glog DT_NEEDED is usually libgflags.so.2.2 even when the ELF basename differs.
+  for _n in ${soname} libgflags.so.2.2 libgflags.so.2 libgflags.so "$(basename "${real}")"; do
+    [ -n "${_n}" ] || continue
+    cp -f "${real}" "${CTX}/lib/${_n}"
+  done
+  return 0
+}
+
+_glog="$(ldd "${_bin}" 2>/dev/null | awk '/libglog\.so/ && /=> \// {print $3; exit}')"
+case "${_glog}" in
+  /opt/rocm/*|/usr/*|/lib/*|/lib64/*) _glog="" ;;
+esac
+if [ -z "${_glog}" ]; then
+  for _cand in \
+    "${MILVUS_DIR}/internal/core/output/lib"/libglog.so.1 \
+    "${MILVUS_DIR}/internal/core/output/lib"/libglog.so \
+    "${MILVUS_DIR}/lib"/libglog.so.1 \
+    "${HIPVS_PREFIX}/lib"/libglog.so.1 \
+    "${HIPVS_PREFIX}/lib64"/libglog.so.1
+  do
+    [ -e "${_cand}" ] || continue
+    _glog="$(readlink -f "${_cand}")"
+    break
+  done
+fi
+if [ -z "${_glog}" ]; then
+  for _kh in "${MILVUS_DIR}/internal/core/output/lib"/libknowhere*.so*; do
+    [ -e "${_kh}" ] || continue
+    _glog="$(ldd "${_kh}" 2>/dev/null | awk '/libglog\.so/ && /=> \// {print $3; exit}')"
+    case "${_glog}" in
+      /opt/rocm/*|/usr/*|/lib/*|/lib64/*) _glog="" ;;
+    esac
+    [ -n "${_glog}" ] && break
+  done
+fi
+if [ -n "${_glog}" ]; then
+  echo "    glog ${_glog}"
+  _copy_so "${_glog}"
+fi
+
+_gflags_ok=0
+for _cand in \
+  "${WORKDIR}/libshims/libgflags_gflagsns.so" \
+  "${MILVUS_DIR}/internal/core/output/lib"/libgflags.so.2.2 \
+  "${MILVUS_DIR}/internal/core/output/lib"/libgflags.so \
+  "${MILVUS_DIR}/lib"/libgflags.so.2.2 \
+  "${HIPVS_PREFIX}/lib"/libgflags.so.2.2 \
+  "${HIPVS_PREFIX}/lib"/libgflags.so \
+  "${HIPVS_PREFIX}/lib64"/libgflags.so.2.2
+do
+  [ -e "${_cand}" ] || continue
+  if _install_gflags_elf "$(readlink -f "${_cand}")"; then
+    _gflags_ok=1
+    break
+  fi
+done
+if [ "${_gflags_ok}" = "0" ]; then
+  while IFS= read -r _cand; do
+    [ -n "${_cand}" ] || continue
+    if _install_gflags_elf "${_cand}"; then
+      _gflags_ok=1
+      break
+    fi
+  done < <(find "${HOME}/.conan" "${HOME}/.conan2" "${WORKDIR}" \
+    -name 'libgflags.so*' -o -name 'libgflags_gflagsns.so' 2>/dev/null | head -40)
+fi
+
+if [ -f "${CTX}/lib/libglog.so.1" ] && \
+   nm -D "${CTX}/lib/libglog.so.1" 2>/dev/null | grep -q ' U .*_ZN6gflags14FlagRegisterer'
+then
+  if ! find "${CTX}/lib" -maxdepth 1 \( -name 'libgflags*' \) -print0 2>/dev/null \
+      | xargs -0 -r nm -D 2>/dev/null | grep -q '_ZN6gflags14FlagRegisterer'
+  then
+    echo "ERROR: packed libglog.so.1 needs gflags::FlagRegisterer, but no packed" >&2
+    echo "  libgflags exports it (apt/ROCm gflags use google:: and will not work)." >&2
+    echo "  Host Milvus uses: LD_PRELOAD=${WORKDIR}/libshims/libgflags_gflagsns.so" >&2
+    echo "  That file must be a real ELF with gflags:: symbols, not a symlink to apt." >&2
+    echo "  nm -D ${WORKDIR}/libshims/libgflags_gflagsns.so | grep FlagRegisterer" >&2
+    exit 1
+  fi
+fi
+if [ "${_gflags_ok}" = "1" ]; then
+  echo "    FlagRegisterer pin ok"
+elif [ -f "${CTX}/lib/libglog.so.1" ]; then
+  echo "WARNING: no gflags:: libgflags found; container will likely die on FlagRegisterer" >&2
+fi
 
 _missing="$(LD_LIBRARY_PATH="${CTX}/lib" ldd "${CTX}/bin/milvus" 2>/dev/null | grep 'not found' || true)"
 if [ -n "${_missing}" ]; then

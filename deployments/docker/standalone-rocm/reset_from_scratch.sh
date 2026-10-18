@@ -24,6 +24,11 @@ rm -rf "${SCRIPT_DIR}/context"
 echo "==> pack from ${MILVUS_DIR} + ${HIPVS_PREFIX} + /opt/rocm"
 bash "${SCRIPT_DIR}/pack_from_lab.sh"
 
+echo "==> packed glog/gflags (need gflags::FlagRegisterer, not google::)"
+ls -l "${SCRIPT_DIR}/context/lib"/libglog.so* "${SCRIPT_DIR}/context/lib"/libgflags* 2>/dev/null || true
+nm -D "${SCRIPT_DIR}/context/lib/libglog.so.1" 2>/dev/null | grep FlagRegisterer || true
+nm -D "${SCRIPT_DIR}/context/lib/libgflags_gflagsns.so" 2>/dev/null | grep FlagRegisterer | head -5 || true
+
 echo "==> host ldd with packed libs (must be empty)"
 LD_LIBRARY_PATH="${SCRIPT_DIR}/context/lib" ldd "${SCRIPT_DIR}/context/bin/milvus" | grep 'not found' && {
   echo "ERROR: pack left unresolved libs; not building" >&2
