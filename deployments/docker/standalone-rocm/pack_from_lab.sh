@@ -204,16 +204,72 @@ _nm_has() {
   [ -n "${out}" ]
 }
 
-_gflags_ns() {
-  _nm_has "$1" '_ZN6gflags14FlagRegisterer' -D
+_GLOG_FLAGREG_NEEDED=""
+
+_load_glog_needed() {
+  _GLOG_FLAGREG_NEEDED=""
+  [ -f "${CTX}/lib/libglog.so.1" ] || return 0
+  _GLOG_FLAGREG_NEEDED="$(nm -D "${CTX}/lib/libglog.so.1" 2>/dev/null \
+    | awk '/ U / && /FlagRegisterer/ {print $NF}' | sort -u)"
+  if [ -n "${_GLOG_FLAGREG_NEEDED}" ]; then
+    echo "    glog undefined FlagRegisterer:"
+    printf '%s\n' "${_GLOG_FLAGREG_NEEDED}" | sed 's/^/      /'
+  fi
+}
+
+# True if every FlagRegisterer glog needs is DEFINED in this ELF.
+_gflags_covers_glog() {
+  local elf="$1" need defs
+  [ -f "${elf}" ] || return 1
+  if [ -z "${_GLOG_FLAGREG_NEEDED}" ]; then
+    _nm_has "${elf}" '_ZN6gflags14FlagRegisterer' -D
+    return $?
+  fi
+  while IFS= read -r need; do
+    [ -n "${need}" ] || continue
+    defs="$(nm -D "${elf}" 2>/dev/null | grep -F "${need}" | grep -v ' U ' || true)"
+    if [ -z "${defs}" ]; then
+      return 1
+    fi
+  done <<< "${_GLOG_FLAGREG_NEEDED}"
+  return 0
+}
+
+_gflags_covers_glog_as_google() {
+  local elf="$1" need gneed defs
+  [ -f "${elf}" ] || return 1
+  [ -n "${_GLOG_FLAGREG_NEEDED}" ] || return 1
+  while IFS= read -r need; do
+    [ -n "${need}" ] || continue
+    gneed="${need//6gflags/6google}"
+    defs="$(nm -D "${elf}" 2>/dev/null | grep -F "${gneed}" | grep -v ' U ' || true)"
+    if [ -z "${defs}" ]; then
+      return 1
+    fi
+  done <<< "${_GLOG_FLAGREG_NEEDED}"
+  return 0
+}
+
+_rename_google_to_gflags() {
+  local src="$1" dest="$2" map
+  mkdir -p "$(dirname "${dest}")"
+  map="${WORKDIR}/libshims/gflags_redefine.map"
+  mkdir -p "${WORKDIR}/libshims"
+  nm -D "${src}" 2>/dev/null | awk '{print $NF}' | grep '6google' | sort -u | while read -r _sym; do
+    printf '%s %s\n' "${_sym}" "${_sym//6google/6gflags}"
+  done > "${map}"
+  [ -s "${map}" ] || return 1
+  echo "    rename google:: -> gflags:: ($(wc -l < "${map}") symbols) from ${src}"
+  objcopy --redefine-syms="${map}" "${src}" "${dest}"
+  rm -f "${map}"
 }
 
 _install_gflags_elf() {
   local real="$1"
   local soname="" _n="" _src=""
   [ -f "${real}" ] || return 1
-  _gflags_ns "${real}" || return 1
-  echo "    gflags(gflags::) ${real}"
+  _gflags_covers_glog "${real}" || return 1
+  echo "    gflags covers glog: ${real}"
   _copy_so "${real}"
   cp -f "${real}" "${CTX}/lib/libgflags_gflagsns.so"
   soname="$(objdump -p "${real}" 2>/dev/null | awk '/SONAME/ {print $2; exit}')"
@@ -234,6 +290,23 @@ _install_gflags_elf() {
     done < <(readelf -d "${_src}" 2>/dev/null | awk '/NEEDED/ && /gflags/ {gsub(/[\[\]]/,"",$NF); print $NF}')
   done
   return 0
+}
+
+_try_gflags() {
+  local src="$1" real dest
+  [ -e "${src}" ] || return 1
+  real="$(readlink -f "${src}")"
+  [ -f "${real}" ] || return 1
+  if _install_gflags_elf "${real}"; then
+    return 0
+  fi
+  if _gflags_covers_glog_as_google "${real}"; then
+    dest="${WORKDIR}/libshims/libgflags_gflagsns.so"
+    if _rename_google_to_gflags "${real}" "${dest}" && _install_gflags_elf "${dest}"; then
+      return 0
+    fi
+  fi
+  return 1
 }
 
 _glog="$(ldd "${_bin}" 2>/dev/null | awk '/libglog\.so/ && /=> \// {print $3; exit}')"
@@ -267,103 +340,89 @@ if [ -n "${_glog}" ]; then
   echo "    glog ${_glog}"
   _copy_so "${_glog}"
 fi
+_load_glog_needed
 
+# Prefer Conan *shared* gflags (has FlagRegisterer<std::__cxx11::string>).
+# The leftover .a shim only had the bool ctor — that is the previous image crash.
 _gflags_ok=0
-for _cand in \
-  "${WORKDIR}/libshims/libgflags_gflagsns.so" \
-  "${MILVUS_DIR}/internal/core/output/lib"/libgflags.so.2.2 \
-  "${MILVUS_DIR}/internal/core/output/lib"/libgflags.so \
-  "${MILVUS_DIR}/lib"/libgflags.so.2.2 \
-  "${HIPVS_PREFIX}/lib"/libgflags.so.2.2 \
-  "${HIPVS_PREFIX}/lib"/libgflags.so \
-  "${HIPVS_PREFIX}/lib64"/libgflags.so.2.2
-do
-  [ -e "${_cand}" ] || continue
-  if _install_gflags_elf "$(readlink -f "${_cand}")"; then
+while IFS= read -r _cand; do
+  [ -n "${_cand}" ] || continue
+  echo "    try ${_cand}"
+  if _try_gflags "${_cand}"; then
     _gflags_ok=1
     break
   fi
-done
+done < <(find \
+    "${HOME}/.conan/data/gflags" "${HOME}/.conan2" \
+    "${MILVUS_DIR}/internal/core/output/lib" "${MILVUS_DIR}/lib" \
+    "${HIPVS_PREFIX}/lib" "${HIPVS_PREFIX}/lib64" \
+    \( -name 'libgflags.so*' -o -name 'libgflags_nothreads.so*' \) \
+    -type f 2>/dev/null | awk '!/\.a$/')
+
 if [ "${_gflags_ok}" = "0" ]; then
-  while IFS= read -r _cand; do
-    [ -n "${_cand}" ] || continue
-    if _install_gflags_elf "${_cand}"; then
-      _gflags_ok=1
-      break
-    fi
-  done < <(find "${HOME}/.conan" "${HOME}/.conan2" "${WORKDIR}" \
-    \( -name 'libgflags.so*' -o -name 'libgflags_nothreads.so*' -o -name 'libgflags_gflagsns.so' \) \
-    -type f 2>/dev/null | head -40)
+  echo "    try leftover shim / rebuild from Conan .a"
+  if _try_gflags "${WORKDIR}/libshims/libgflags_gflagsns.so"; then
+    _gflags_ok=1
+  fi
 fi
 
-# July box has no leftover libshims file. Rebuild from Conan gflags .a
-# (same recipe as the Knowhere GPU test runner).
 if [ "${_gflags_ok}" = "0" ]; then
   mkdir -p "${WORKDIR}/libshims"
-  set +e
-  _gflags_a="$(ls -1 \
-    "${HOME}"/.conan/data/gflags/*/_/_/package/*/lib/libgflags_nothreads.a \
-    "${HOME}"/.conan/data/gflags/*/_/_/package/*/lib/libgflags.a \
-    "${HOME}"/.conan2/p/*/p/lib/libgflags_nothreads.a \
-    "${HOME}"/.conan2/p/*/p/lib/libgflags.a \
-    2>/dev/null | head -1)"
-  set -e
-  if [ -n "${_gflags_a}" ] && [ -f "${_gflags_a}" ]; then
+  while IFS= read -r _gflags_a; do
+    [ -f "${_gflags_a}" ] || continue
     echo "    build gflags:: shim from ${_gflags_a}"
     _tmp_so="${WORKDIR}/libshims/libgflags_shim_tmp.so"
     _shim="${WORKDIR}/libshims/libgflags_gflagsns.so"
     g++ -shared -fPIC -o "${_tmp_so}" \
       -Wl,--whole-archive "${_gflags_a}" -Wl,--no-whole-archive \
       -lpthread -lrt
-    if _nm_has "${_tmp_so}" '_ZN6gflags14FlagRegisterer' -D; then
+    if _gflags_covers_glog "${_tmp_so}"; then
       mv -f "${_tmp_so}" "${_shim}"
-    elif _nm_has "${_tmp_so}" '_ZN6google14FlagRegisterer' -D; then
-      _map="${WORKDIR}/libshims/gflags_redefine.map"
-      nm -D "${_tmp_so}" | awk '{print $NF}' | grep '6google' | sort -u | while read -r _sym; do
-        printf '%s %s\n' "${_sym}" "${_sym//6google/6gflags}"
-      done > "${_map}"
-      echo "    rename google:: -> gflags:: ($(wc -l < "${_map}") symbols)"
-      objcopy --redefine-syms="${_map}" "${_tmp_so}" "${_shim}"
-      rm -f "${_tmp_so}" "${_map}"
+    elif _gflags_covers_glog_as_google "${_tmp_so}"; then
+      _rename_google_to_gflags "${_tmp_so}" "${_shim}" || true
+      rm -f "${_tmp_so}"
     else
-      echo "ERROR: FlagRegisterer not in Conan gflags after linking ${_tmp_so}" >&2
-      nm -D "${_tmp_so}" 2>/dev/null | grep -i FlagRegisterer | head >&2 || true
-      exit 1
+      echo "    skip ${_gflags_a} (FlagRegisterer types do not cover glog)"
+      rm -f "${_tmp_so}"
+      continue
     fi
     if _install_gflags_elf "${_shim}"; then
       _gflags_ok=1
+      break
     fi
-  else
-    echo "    no Conan libgflags*.a under ~/.conan"
-  fi
+  done < <(ls -1 \
+    "${HOME}"/.conan/data/gflags/*/_/_/package/*/lib/libgflags_nothreads.a \
+    "${HOME}"/.conan/data/gflags/*/_/_/package/*/lib/libgflags.a \
+    "${HOME}"/.conan2/p/*/p/lib/libgflags_nothreads.a \
+    "${HOME}"/.conan2/p/*/p/lib/libgflags.a \
+    2>/dev/null || true)
 fi
 
-_glog_needs_gflags_ns=0
-if [ -f "${CTX}/lib/libglog.so.1" ]; then
-  _glog_undef="$(nm -D "${CTX}/lib/libglog.so.1" 2>/dev/null | grep ' U ' | grep -F '_ZN6gflags14FlagRegisterer' || true)"
-  if [ -n "${_glog_undef}" ]; then
-    _glog_needs_gflags_ns=1
+if [ -n "${_GLOG_FLAGREG_NEEDED}" ]; then
+  _packed_covers=0
+  for _f in "${CTX}/lib"/libgflags*.so*; do
+    [ -f "${_f}" ] || continue
+    if _gflags_covers_glog "${_f}"; then
+      _packed_covers=1
+      break
+    fi
+  done
+  if [ "${_packed_covers}" != "1" ]; then
+    echo "ERROR: packed gflags does not define every FlagRegisterer glog needs:" >&2
+    printf '%s\n' "${_GLOG_FLAGREG_NEEDED}" | sed 's/^/  /' >&2
+    echo "  nm -D on Conan shared gflags:" >&2
+    find "${HOME}/.conan/data/gflags" -name 'libgflags_nothreads.so*' -type f 2>/dev/null \
+      | while IFS= read -r _c; do
+          echo "  -- ${_c}" >&2
+          nm -D "${_c}" 2>/dev/null | grep FlagRegisterer | head -8 >&2 || true
+        done
+    exit 1
   fi
-fi
-_packed_gflags_ns=0
-for _f in "${CTX}/lib"/libgflags*.so*; do
-  [ -f "${_f}" ] || continue
-  if _gflags_ns "${_f}"; then
-    _packed_gflags_ns=1
-    break
-  fi
-done
-if [ "${_glog_needs_gflags_ns}" = "1" ] && [ "${_packed_gflags_ns}" != "1" ]; then
-  echo "ERROR: packed libglog.so.1 needs gflags::FlagRegisterer, but no packed" >&2
-  echo "  libgflags exports it (apt/ROCm gflags use google:: and will not work)." >&2
-  echo "  ls -l ${CTX}/lib/libgflags* ${CTX}/lib/libglog*" >&2
-  ls -l "${CTX}/lib"/libgflags* "${CTX}/lib"/libglog* 2>&1 | head >&2 || true
-  exit 1
 fi
 if [ "${_gflags_ok}" = "1" ]; then
   echo "    FlagRegisterer pin ok"
 elif [ -f "${CTX}/lib/libglog.so.1" ]; then
-  echo "WARNING: no gflags:: libgflags found; container will likely die on FlagRegisterer" >&2
+  echo "WARNING: no gflags that covers glog FlagRegisterer; container will likely die" >&2
 fi
 
 _missing="$(LD_LIBRARY_PATH="${CTX}/lib" ldd "${CTX}/bin/milvus" 2>/dev/null | grep 'not found' || true)"
