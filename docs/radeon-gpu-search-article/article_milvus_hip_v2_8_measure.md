@@ -2,7 +2,7 @@
 
 The AMD box has 64 GB of DDR5. That was never the limit. The limit was GPU memory, 24 GB versus 16 GB, so we picked GIST-1M: a million vectors, 960 dimensions, about 3.8 GB. It fits both cards. If the collection is larger than the GPU, these plots are not that collection.
 
-Both machines ran the same queries and the same index settings, every night. We wanted a thousand repeats of the same sweep, not one lucky run. The line is median queries per second (QPS) versus nprobe. Whiskers are one standard deviation across those thousand sweeps.
+Both machines ran the same queries and the same index settings, every night. We wanted a thousand repeats of the same sweep, not one lucky run. The line is median queries per second (QPS) versus nprobe. The chart draws whiskers at one standard deviation across those thousand sweeps. On a bimodal QPS sample that deviation does not describe one spread. Warmup is about 100 runs, and the early samples pull the median down.
 
 A sweep that fails the recall gate against exact kNN — the same gate as the NVIDIA build — is thrown away. So is a sweep whose neighbour IDs diverge from the NVIDIA run.
 

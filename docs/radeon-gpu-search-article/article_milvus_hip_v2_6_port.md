@@ -19,15 +19,17 @@ We brought the stack up one layer at a time. Skip a layer and the next one can p
 
 One part of the team sat in the IDE with a coding assistant, edited C++, ran the gates, and decided which numbers could leave the lab. The packer fix and the nightly plots in this article come from that line.
 
-GPU search ran. It returned without an error. The neighbour lists were empty, or the IDs were wrong. The IVF packer still grouped work in groups of 64 — Instinct's wavefront. This gfx1100 path needed groups of 32, like an NVIDIA warp. We set kIndexGroupSize = 32 and USE_WARPSIZE_32. After that, the float IVF tests passed 98/98.
+GPU search already worked. Recall on that path was 1.0, and the neighbour lists were right. The red result was the internal layout check `testPacker`. The mask was computed for groups of 32, while the data was packed in groups of 64 — Instinct's wavefront. The check expected 13 and read 26, exactly twice the count. The suite then showed 97/98 failed, with the neighbours still correct: a false failure on the packer. This `gfx1100` path needs groups of 32, like an NVIDIA warp. We set `kIndexGroupSize = 32` and `USE_WARPSIZE_32`. After that, the float IVF tests passed 98/98.
 
 Knowhere did not need new GPU algorithms. We rebuilt it so it links hipVS instead of cuVS. We reworked the CMake files so HIP would link.
 
 ### 6.2 Using a pipeline of agents
 
-Another part of the team ran a closed agent pipeline: adapt hipVS and hipRAFT, build Knowhere, run tests, pause for a person at each gate. Almost no hand-written C++. The loop was not asked to rewrite kernels for RDNA3. That pipeline did not follow the layer schedule above.
+Another part of the team ran a closed agent pipeline: adapt hipVS and hipRAFT, build Knowhere, run tests. Almost no hand-written C++. The loop was not asked to rewrite kernels for RDNA3. The pipeline is built on the layer ladder above: L0, then L1, L2, L3, and L4. Each layer has a gate, and the run moves on only after that gate passes. In that pipeline L0 is the host and provisioning. The IVF packer check sits inside L1.
 
-That pipeline is not on public GitHub yet. Its dashboard needs a rerun, so those numbers are not in the plots below.
+The gates themselves are deterministic scripts; no person and no model decides pass or fail. What a rule table cannot settle — is this failure flaky, which defect first, is another iteration worth it — goes either to a person (the default) or, with an `--autonomous` switch, to an AI verifier, and every such answer is logged. Decisions that would change what counts as success — quarantining a failure, raising a budget, signing off — stay with a person in both modes.
+
+That pipeline is not on public GitHub yet. On CI run 588103 the two AMD ports ran in turn, six repeats each, and agreed within ±2% of the spread. Its dashboard still needs a rerun, so those CI repeats are not the lines in the plots below.
 
 ![Closed agent pipeline for the HIP port: ordinary build steps, agent, gates, and human review](milvus_pipeline_architecture_v3.png)
 
